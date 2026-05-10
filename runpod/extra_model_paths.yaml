@@ -1,9 +1,11 @@
 # ComfyUI uses this file to discover model directories outside its install
-# tree. The Network Volume is mounted at /workspace on this Serverless
-# endpoint (matching the path we used during bootstrap on the Pod).
+# tree. RunPod mounts Network Volumes at /runpod-volume on Serverless
+# endpoints (hardcoded, not configurable). On Pods the same volume is
+# typically mounted at /workspace, but this YAML is only loaded inside the
+# Serverless container so /runpod-volume is what we use.
 
 runpod_volume:
-  base_path: /workspace/ComfyUI/
+  base_path: /runpod-volume/ComfyUI/
   is_default: true
   diffusion_models: models/diffusion_models/
   text_encoders: models/text_encoders/
