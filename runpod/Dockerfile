@@ -7,6 +7,8 @@
 #
 # Tag pinned to 5.8.5 (Mar 2026 stable). Bump deliberately when validating
 # workflow compatibility.
+#
+# Cache-bust marker: rebuild after RunPod builder crashed on previous attempt.
 
 FROM runpod/worker-comfyui:5.8.5-base
 
