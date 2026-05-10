@@ -1,0 +1,20 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+pydantic-settings>=2.6
+python-multipart>=0.0.12
+httpx>=0.27
+huggingface_hub>=0.26
+
+# Local Qwen3-4B via Transformers + bitsandbytes 4-bit (in-process)
+# NOTE: torch must be installed FIRST with the CUDA index URL, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# (CUDA 12.7 driver -> cu124 wheel via forward compatibility.)
+# Do NOT add torch here, or pip will install the CPU-only build from PyPI.
+transformers>=4.51
+accelerate>=0.30
+bitsandbytes>=0.43
+sentencepiece>=0.2
+
+# Dev / test
+pytest>=8.3

@@ -1,0 +1,90 @@
+{
+  "5": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": "__WIDTH__",
+      "height": "__HEIGHT__",
+      "batch_size": 1
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "__PROMPT__",
+      "clip": ["11", 0]
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["13", 0],
+      "vae": ["10", 0]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "__OUTPUT_PREFIX__",
+      "images": ["8", 0]
+    }
+  },
+  "10": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "11": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "t5xxl_fp16.safetensors",
+      "clip_name2": "clip_l.safetensors",
+      "type": "flux"
+    }
+  },
+  "12": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux1-dev.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "13": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": "__SEED__",
+      "steps": "__STEPS__",
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0,
+      "model": ["16", 0],
+      "positive": ["17", 0],
+      "negative": ["33", 0],
+      "latent_image": ["5", 0]
+    }
+  },
+  "16": {
+    "class_type": "ModelSamplingFlux",
+    "inputs": {
+      "max_shift": 1.15,
+      "base_shift": 0.5,
+      "width": "__WIDTH__",
+      "height": "__HEIGHT__",
+      "model": ["12", 0]
+    }
+  },
+  "17": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "guidance": "__GUIDANCE__",
+      "conditioning": ["6", 0]
+    }
+  },
+  "33": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": ["6", 0]
+    }
+  }
+}

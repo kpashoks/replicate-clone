@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local config
+.env
+.env.local
+.env.*.local
+
+# Project data (user uploads, generated outputs, job snapshots)
+data/inputs/*
+data/outputs/*
+data/jobs/*
+!data/inputs/.gitkeep
+!data/outputs/.gitkeep
+!data/jobs/.gitkeep
+
+# Local model weights (downloaded separately, multi-GB)
+models/*.gguf
+models/*.safetensors
+models/*.bin
+
+# Office docs (private notes; not part of the codebase)
+*.docx
+*.xlsx
+*.pdf

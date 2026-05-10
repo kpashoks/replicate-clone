@@ -1,0 +1,133 @@
+import secrets
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+import jobs
+import models_registry
+from runpod_client import RunPodClient, RunPodError
+
+
+router = APIRouter(prefix="/api", tags=["generate"])
+
+
+# ---- per-model input schemas -----------------------------------------------
+
+
+class TextToImageParams(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    width: int = Field(1024, ge=256, le=2048)
+    height: int = Field(1024, ge=256, le=2048)
+    steps: int = Field(20, ge=1, le=50)
+    guidance: float = Field(3.5, ge=0.0, le=20.0)
+    seed: int = Field(-1, description="-1 means random")
+
+
+_PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
+    "text-to-image": TextToImageParams,
+}
+
+
+# ---- request/response models -----------------------------------------------
+
+
+class GenerateRequest(BaseModel):
+    params: dict = Field(default_factory=dict)
+    input_ids: list[str] = Field(default_factory=list)
+
+
+class GenerateResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobView(BaseModel):
+    id: str
+    slug: str
+    status: str
+    params: dict
+    runpod_request_id: str | None = None
+    runpod_status: str | None = None
+    output_files: list[str] = []
+    error: str | None = None
+    created_at: float
+    updated_at: float
+
+
+def _to_view(j: jobs.Job) -> JobView:
+    return JobView(
+        id=j.id,
+        slug=j.slug,
+        status=j.status,
+        params=j.params,
+        runpod_request_id=j.runpod_request_id,
+        runpod_status=j.runpod_status,
+        output_files=j.output_files,
+        error=j.error,
+        created_at=j.created_at,
+        updated_at=j.updated_at,
+    )
+
+
+# ---- routes ----------------------------------------------------------------
+
+
+@router.post("/generate/{slug}", response_model=GenerateResponse)
+async def submit_generate(slug: str, req: GenerateRequest) -> GenerateResponse:
+    model = models_registry.get_model(slug)
+    if not model:
+        raise HTTPException(status_code=404, detail=f"Unknown model slug: {slug}")
+    if not model.available:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{slug}' is not yet available in this milestone.",
+        )
+
+    schema_cls = _PARAMS_SCHEMA.get(slug)
+    if not schema_cls:
+        raise HTTPException(status_code=400, detail=f"No input schema registered for {slug}")
+
+    try:
+        validated = schema_cls.model_validate(req.params)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    params = validated.model_dump()
+    if params.get("seed", -1) == -1:
+        params["seed"] = secrets.randbits(32)
+
+    job = jobs.registry.create(slug, params)
+    jobs.schedule(jobs.run_job(job.id, slug, model.workflow_file, params))
+    return GenerateResponse(job_id=job.id, status=job.status)
+
+
+@router.get("/jobs/{job_id}", response_model=JobView)
+async def get_job(job_id: str) -> JobView:
+    j = jobs.registry.get(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return _to_view(j)
+
+
+@router.get("/jobs", response_model=list[JobView])
+async def list_jobs() -> list[JobView]:
+    return [_to_view(j) for j in jobs.registry.list()]
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobView)
+async def cancel_job(job_id: str) -> JobView:
+    j = jobs.registry.get(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if j.status in {"succeeded", "failed", "cancelled"}:
+        return _to_view(j)
+    if j.runpod_request_id:
+        try:
+            client = RunPodClient()
+            await client.cancel(j.runpod_request_id)
+        except RunPodError as e:
+            raise HTTPException(status_code=502, detail=f"RunPod cancel failed: {e}")
+    jobs.registry.update(job_id, status="cancelled")
+    j2 = jobs.registry.get(job_id)
+    assert j2 is not None
+    return _to_view(j2)

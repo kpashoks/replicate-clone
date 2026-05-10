@@ -1,0 +1,13 @@
+# Default: text files use platform-native line endings in working copy,
+# normalized to LF in the repository.
+* text=auto
+
+# Force LF for files that MUST be LF for Linux runtime (shell scripts,
+# Dockerfile, configs read by Linux services). This protects RunPod builds
+# from platform-specific line-ending breakage.
+*.sh        text eol=lf
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf

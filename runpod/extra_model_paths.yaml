@@ -1,0 +1,13 @@
+# ComfyUI uses this file to discover model directories outside its install
+# tree. Mounted Network Volume on RunPod is at /runpod-volume.
+
+runpod_volume:
+  base_path: /runpod-volume/ComfyUI/
+  is_default: true
+  diffusion_models: models/diffusion_models/
+  text_encoders: models/text_encoders/
+  vae: models/vae/
+  loras: models/loras/
+  upscale_models: models/upscale_models/
+  clip_vision: models/clip_vision/
+  controlnet: models/controlnet/

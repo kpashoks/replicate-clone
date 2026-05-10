@@ -1,0 +1,20 @@
+# replicate-local custom ComfyUI worker
+#
+# Base image is RunPod's official worker-comfyui — already cached on RunPod's
+# infrastructure, so cold starts skip the multi-GB image pull. Model weights
+# live entirely on the attached Network Volume (NOT in this image), keeping
+# the image small and rebuild-cheap.
+#
+# Tag pinned to 5.8.5 (Mar 2026 stable). Bump deliberately when validating
+# workflow compatibility.
+
+FROM runpod/worker-comfyui:5.8.5-base
+
+# Install custom nodes.
+# For M2 (FLUX text-to-image) none are needed. M4 (Wan 2.2 Animate) will add
+# ComfyUI-GGUF, ComfyUI-VideoHelperSuite, ComfyUI-WanAnimate, ComfyUI-KJNodes.
+COPY install_custom_nodes.sh /install_custom_nodes.sh
+RUN chmod +x /install_custom_nodes.sh && /install_custom_nodes.sh
+
+# Tell ComfyUI to read model weights from the Network Volume.
+COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
