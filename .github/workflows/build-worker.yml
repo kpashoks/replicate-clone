@@ -1,0 +1,69 @@
+name: Build and push worker image
+
+# Builds runpod/Dockerfile and pushes to ghcr.io. Triggered on any push to
+# main that touches runpod/ or this workflow itself, plus manual dispatch.
+#
+# Runs on GitHub-hosted Ubuntu runners (multi-Gbps network) so we don't burn
+# the user's bandwidth pushing 12 GB of base layers.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'runpod/**'
+      - '.github/workflows/build-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        # GHA runners ship with ~14 GB free; the worker-comfyui base image is
+        # ~12 GB. Prune preinstalled tooling we don't need to make headroom.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker system prune -af || true
+          df -h
+
+      - name: Lowercase image name
+        # ghcr.io image paths must be lowercase. github.repository is already
+        # lowercase for kpashoks/replicate-clone but this is defensive.
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./runpod
+          file: ./runpod/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:latest
+            ${{ steps.img.outputs.name }}:${{ github.sha }}
+          # Don't use GHA cache: 10 GB limit, our image is ~12 GB.
+          provenance: false
+
+      - name: Print image URLs
+        run: |
+          echo "Pushed:"
+          echo "  ${{ steps.img.outputs.name }}:latest"
+          echo "  ${{ steps.img.outputs.name }}:${{ github.sha }}"
