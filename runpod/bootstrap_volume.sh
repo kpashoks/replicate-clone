@@ -159,8 +159,10 @@ if [ -f "$VOLUME_ROOT/models/text_encoders/split_files/text_encoders/umt5_xxl_fp
 fi
 
 echo ""
-echo "=== [9/9] Downloading CLIP Vision H for Wan (~2.5 GB) ==="
-hf download Comfy-Org/Wan_2.2_ComfyUI_Repackaged \
+echo "=== [9/9] Downloading CLIP Vision H for Wan (~1.3 GB) ==="
+# CLIP Vision lives in the Wan 2.1 repackage, not 2.2 (the 2.2 repackage has
+# no clip_vision subdir; the file is shared across Wan versions).
+hf download Comfy-Org/Wan_2.1_ComfyUI_repackaged \
   split_files/clip_vision/clip_vision_h.safetensors \
   --local-dir "$VOLUME_ROOT/models/clip_vision"
 if [ -f "$VOLUME_ROOT/models/clip_vision/split_files/clip_vision/clip_vision_h.safetensors" ]; then
