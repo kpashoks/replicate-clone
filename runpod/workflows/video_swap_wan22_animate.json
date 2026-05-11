@@ -86,14 +86,14 @@
       "positive": ["8", 0],
       "negative": ["9", 0],
       "vae": ["3", 0],
+      "width": 832,
+      "height": 480,
+      "length": "__FRAMES__",
+      "batch_size": 1,
       "clip_vision_output": ["10", 0],
       "reference_image": ["5", 0],
       "pose_video": ["7", 0],
-      "source_video": ["6", 0],
-      "width": 480,
-      "height": 832,
-      "length": "__FRAMES__",
-      "batch_size": 1
+      "background_video": ["6", 0]
     }
   },
   "12": {
