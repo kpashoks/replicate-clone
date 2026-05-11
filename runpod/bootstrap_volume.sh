@@ -73,6 +73,14 @@ mkdir -p \
   "$VOLUME_ROOT/input" \
   "$VOLUME_ROOT/output"
 
+# Route huggingface_hub's cache to the Network Volume. Otherwise it writes to
+# the container disk (typically <60 GB) and a 28 GB Wan checkpoint can fill
+# it before the download even finishes ("No space left on device, os error 28").
+VOLUME_MOUNT="$(dirname "$VOLUME_ROOT")"
+export HF_HUB_CACHE="${HF_HUB_CACHE:-$VOLUME_MOUNT/hf_cache}"
+mkdir -p "$HF_HUB_CACHE"
+echo "HF_HUB_CACHE=$HF_HUB_CACHE"
+
 echo "=== Installing huggingface_hub CLI ==="
 pip install -q "huggingface_hub[cli]"
 
