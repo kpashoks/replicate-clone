@@ -13,9 +13,10 @@
 #        export HF_TOKEN=hf_xxxxxxxxxx
 #        bash bootstrap_volume.sh
 #
-# Expected runtime: ~20-40 minutes (depends on RunPod region bandwidth).
-# Final disk usage: ~35 GB
+# Expected runtime: ~30-60 minutes (depends on RunPod region bandwidth).
+# Final disk usage: ~59 GB
 #   flux1-dev fp16          ~24 GB
+#   flux1-kontext-dev fp16  ~24 GB
 #   t5xxl_fp16              ~9.5 GB
 #   clip_l                  ~250 MB
 #   ae (FLUX VAE)           ~335 MB
@@ -73,24 +74,31 @@ echo "=== Authenticating with HuggingFace ==="
 hf auth login --token "$HF_TOKEN" --add-to-git-credential
 
 echo ""
-echo "=== [1/4] Downloading FLUX.1 [dev] checkpoint (~24 GB) ==="
+echo "=== [1/5] Downloading FLUX.1 [dev] checkpoint (~24 GB) ==="
 hf download black-forest-labs/FLUX.1-dev flux1-dev.safetensors \
   --local-dir "$VOLUME_ROOT/models/diffusion_models"
 
 echo ""
-echo "=== [2/4] Downloading FLUX VAE (~335 MB) ==="
+echo "=== [2/5] Downloading FLUX.1 Kontext [dev] checkpoint (~24 GB) ==="
+# Also gated under FLUX.1 Non-Commercial. Accept the license at
+# https://huggingface.co/black-forest-labs/FLUX.1-Kontext-dev before this runs.
+hf download black-forest-labs/FLUX.1-Kontext-dev flux1-kontext-dev.safetensors \
+  --local-dir "$VOLUME_ROOT/models/diffusion_models"
+
+echo ""
+echo "=== [3/5] Downloading FLUX VAE (~335 MB) ==="
 # Note: the VAE is identical between FLUX.1-dev and FLUX.1-schnell. The
 # schnell repo is ungated, so we pull from there to avoid the gated download.
 hf download black-forest-labs/FLUX.1-schnell ae.safetensors \
   --local-dir "$VOLUME_ROOT/models/vae"
 
 echo ""
-echo "=== [3/4] Downloading T5-XXL fp16 text encoder (~9.5 GB) ==="
+echo "=== [4/5] Downloading T5-XXL fp16 text encoder (~9.5 GB) ==="
 hf download comfyanonymous/flux_text_encoders t5xxl_fp16.safetensors \
   --local-dir "$VOLUME_ROOT/models/text_encoders"
 
 echo ""
-echo "=== [4/4] Downloading CLIP-L text encoder (~250 MB) ==="
+echo "=== [5/5] Downloading CLIP-L text encoder (~250 MB) ==="
 hf download comfyanonymous/flux_text_encoders clip_l.safetensors \
   --local-dir "$VOLUME_ROOT/models/text_encoders"
 

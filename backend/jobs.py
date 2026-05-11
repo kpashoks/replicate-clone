@@ -85,7 +85,13 @@ def schedule(coro) -> None:
     task.add_done_callback(_running_tasks.discard)
 
 
-async def run_job(job_id: str, slug: str, workflow_file: str, params: dict) -> None:
+async def run_job(
+    job_id: str,
+    slug: str,
+    workflow_file: str,
+    params: dict,
+    input_ids: list[str] | None = None,
+) -> None:
     """Background runner: build workflow -> submit to RunPod -> poll -> decode outputs."""
     try:
         client = RunPodClient()
@@ -101,8 +107,26 @@ async def run_job(job_id: str, slug: str, workflow_file: str, params: dict) -> N
         registry.update(job_id, status="failed", error=f"workflow build: {e}")
         return
 
+    # Resolve uploaded inputs to base64 payloads. The workflow JSON references
+    # them by a fixed name ("user_input.png"); first input wins.
+    images_payload: list[dict] = []
+    if input_ids:
+        for i, input_id in enumerate(input_ids):
+            try:
+                path = storage.resolve_input(input_id)
+                raw = path.read_bytes()
+            except (FileNotFoundError, OSError) as e:
+                registry.update(
+                    job_id,
+                    status="failed",
+                    error=f"upload {input_id}: {e}",
+                )
+                return
+            name = "user_input.png" if i == 0 else f"user_input_{i}.png"
+            images_payload.append({"name": name, "image": base64.b64encode(raw).decode("ascii")})
+
     try:
-        request_id = await client.submit(workflow)
+        request_id = await client.submit(workflow, images_payload or None)
     except RunPodError as e:
         registry.update(job_id, status="failed", error=f"submit: {e}")
         return

@@ -23,8 +23,23 @@ class TextToImageParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+class ImageEditParams(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    steps: int = Field(20, ge=1, le=50)
+    # FLUX Kontext typically uses lower guidance than FLUX dev (2.5 vs 3.5).
+    guidance: float = Field(2.5, ge=0.0, le=20.0)
+    seed: int = Field(-1, description="-1 means random")
+
+
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
+    "image-edit": ImageEditParams,
+}
+
+# Per-slug minimum-input requirements (number of uploaded files needed).
+_MIN_INPUT_IDS: dict[str, int] = {
+    "text-to-image": 0,
+    "image-edit": 1,
 }
 
 
@@ -87,6 +102,13 @@ async def submit_generate(slug: str, req: GenerateRequest) -> GenerateResponse:
     if not schema_cls:
         raise HTTPException(status_code=400, detail=f"No input schema registered for {slug}")
 
+    min_inputs = _MIN_INPUT_IDS.get(slug, 0)
+    if len(req.input_ids) < min_inputs:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{slug} requires {min_inputs} uploaded input(s); got {len(req.input_ids)}",
+        )
+
     try:
         validated = schema_cls.model_validate(req.params)
     except Exception as e:
@@ -97,7 +119,9 @@ async def submit_generate(slug: str, req: GenerateRequest) -> GenerateResponse:
         params["seed"] = secrets.randbits(32)
 
     job = jobs.registry.create(slug, params)
-    jobs.schedule(jobs.run_job(job.id, slug, model.workflow_file, params))
+    jobs.schedule(
+        jobs.run_job(job.id, slug, model.workflow_file, params, req.input_ids),
+    )
     return GenerateResponse(job_id=job.id, status=job.status)
 
 

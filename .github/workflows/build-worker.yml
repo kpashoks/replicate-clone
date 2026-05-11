@@ -10,7 +10,14 @@ on:
   push:
     branches: [main]
     paths:
-      - 'runpod/**'
+      # Only the files that are actually baked into the worker image. Workflow
+      # JSONs and bootstrap_volume.sh are NOT in the image — workflows are
+      # loaded by the backend at runtime and sent in the API payload; the
+      # bootstrap script only runs on a temporary Pod against the Network
+      # Volume. Skipping those avoids unnecessary 10-min GHA rebuilds.
+      - 'runpod/Dockerfile'
+      - 'runpod/install_custom_nodes.sh'
+      - 'runpod/extra_model_paths.yaml'
       - '.github/workflows/build-worker.yml'
   workflow_dispatch:
 

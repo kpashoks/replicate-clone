@@ -1,3 +1,4 @@
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -5,7 +6,8 @@ from pathlib import Path
 from config import settings
 
 
-_SAFE_RE = re.compile(r"[^a-zA-Z0-9_-]")
+_SAFE_RE = re.compile(r"[^a-zA-Z0-9_.-]")
+_ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 
 def new_job_id() -> str:
@@ -14,6 +16,12 @@ def new_job_id() -> str:
 
 def output_dir(job_id: str) -> Path:
     p = settings.data_dir_abs / "outputs" / job_id
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def inputs_dir() -> Path:
+    p = settings.data_dir_abs / "inputs"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -37,3 +45,42 @@ def write_output(job_id: str, name: str, raw_bytes: bytes) -> str:
     p = d / safe_name
     p.write_bytes(raw_bytes)
     return f"/api/files/outputs/{job_id}/{safe_name}"
+
+
+def save_upload(file_bytes: bytes, filename: str) -> dict:
+    """Save an uploaded file to data/inputs/<sha256>/<original_filename> (content-addressed).
+
+    Returns a dict with id, url, name, size.
+    """
+    ext = Path(filename).suffix.lower() or ".bin"
+    if ext not in _ALLOWED_IMAGE_EXTS:
+        raise ValueError(
+            f"Unsupported file extension '{ext}'. Allowed: {sorted(_ALLOWED_IMAGE_EXTS)}"
+        )
+
+    h = hashlib.sha256(file_bytes).hexdigest()[:16]
+    safe_name = _SAFE_RE.sub("_", Path(filename).stem) + ext
+
+    d = inputs_dir() / h
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / safe_name
+    p.write_bytes(file_bytes)
+
+    return {
+        "id": h,
+        "url": f"/api/files/inputs/{h}/{safe_name}",
+        "name": safe_name,
+        "size": len(file_bytes),
+    }
+
+
+def resolve_input(input_id: str) -> Path:
+    """Resolve a previously-uploaded input ID to its file path."""
+    d = inputs_dir() / input_id
+    if not d.is_dir():
+        raise FileNotFoundError(f"Unknown input id: {input_id}")
+    # There should be exactly one file in the directory.
+    files = [p for p in d.iterdir() if p.is_file()]
+    if not files:
+        raise FileNotFoundError(f"Input id {input_id} has no file on disk")
+    return files[0]

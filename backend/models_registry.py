@@ -36,7 +36,7 @@ REGISTRY: dict[str, ModelEntry] = {
         output_kind="image",
         accepts_image=True,
         stage=1,
-        available=False,
+        available=True,
     ),
     "character-swap": ModelEntry(
         slug="character-swap",
