@@ -13,13 +13,21 @@
 #        export HF_TOKEN=hf_xxxxxxxxxx
 #        bash bootstrap_volume.sh
 #
-# Expected runtime: ~30-60 minutes (depends on RunPod region bandwidth).
-# Final disk usage: ~59 GB
-#   flux1-dev fp16          ~24 GB
-#   flux1-kontext-dev fp16  ~24 GB
-#   t5xxl_fp16              ~9.5 GB
-#   clip_l                  ~250 MB
-#   ae (FLUX VAE)           ~335 MB
+# Expected runtime (full bootstrap): ~60-90 minutes.
+# Final disk usage: ~98 GB
+#   flux1-dev fp16                  ~24 GB
+#   flux1-kontext-dev fp16          ~24 GB
+#   wan2.2_animate_14B bf16         ~28 GB
+#   umt5_xxl fp8 (Wan)              ~5 GB
+#   t5xxl_fp16 (FLUX)               ~9.5 GB
+#   wan_2.1_vae                     ~500 MB
+#   clip_vision_h                   ~2.5 GB
+#   clip_l                          ~250 MB
+#   ae (FLUX VAE)                   ~335 MB
+#
+# The script is idempotent: re-running skips files that already exist on disk.
+# If your volume already has FLUX assets (M2/M3 bootstrap done), this run only
+# adds the new Wan-related downloads (~36 GB).
 
 set -euo pipefail
 
@@ -61,7 +69,9 @@ mkdir -p \
   "$VOLUME_ROOT/models/upscale_models" \
   "$VOLUME_ROOT/models/clip_vision" \
   "$VOLUME_ROOT/models/controlnet" \
-  "$VOLUME_ROOT/custom_nodes"
+  "$VOLUME_ROOT/custom_nodes" \
+  "$VOLUME_ROOT/input" \
+  "$VOLUME_ROOT/output"
 
 echo "=== Installing huggingface_hub CLI ==="
 pip install -q "huggingface_hub[cli]"
@@ -98,9 +108,58 @@ hf download comfyanonymous/flux_text_encoders t5xxl_fp16.safetensors \
   --local-dir "$VOLUME_ROOT/models/text_encoders"
 
 echo ""
-echo "=== [5/5] Downloading CLIP-L text encoder (~250 MB) ==="
+echo "=== [5/9] Downloading CLIP-L text encoder (~250 MB) ==="
 hf download comfyanonymous/flux_text_encoders clip_l.safetensors \
   --local-dir "$VOLUME_ROOT/models/text_encoders"
+
+echo ""
+echo "=== [6/9] Downloading Wan 2.2 Animate 14B bf16 checkpoint (~28 GB) ==="
+# Comfy-Org's repackaged variant - ungated, sized for native ComfyUI workflows.
+# If you want a smaller quantized version instead, swap this for a GGUF from
+# QuantStack/Wan2.2-Animate-14B-GGUF (e.g. Wan2.2-Animate-14B-Q6_K.gguf at ~12 GB).
+hf download Comfy-Org/Wan_2.2_ComfyUI_Repackaged \
+  split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors \
+  --local-dir "$VOLUME_ROOT/models/diffusion_models"
+# Move it out of the nested split_files/diffusion_models/ subdir into the
+# top-level diffusion_models/ dir, where the workflow expects it.
+if [ -f "$VOLUME_ROOT/models/diffusion_models/split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/diffusion_models/split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors" \
+     "$VOLUME_ROOT/models/diffusion_models/"
+  rm -rf "$VOLUME_ROOT/models/diffusion_models/split_files"
+fi
+
+echo ""
+echo "=== [7/9] Downloading Wan 2.1 VAE (~500 MB) ==="
+hf download Comfy-Org/Wan_2.2_ComfyUI_Repackaged \
+  split_files/vae/wan_2.1_vae.safetensors \
+  --local-dir "$VOLUME_ROOT/models/vae"
+if [ -f "$VOLUME_ROOT/models/vae/split_files/vae/wan_2.1_vae.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/vae/split_files/vae/wan_2.1_vae.safetensors" \
+     "$VOLUME_ROOT/models/vae/"
+  rm -rf "$VOLUME_ROOT/models/vae/split_files"
+fi
+
+echo ""
+echo "=== [8/9] Downloading UMT5-XXL fp8 text encoder for Wan (~5 GB) ==="
+hf download Comfy-Org/Wan_2.2_ComfyUI_Repackaged \
+  split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors \
+  --local-dir "$VOLUME_ROOT/models/text_encoders"
+if [ -f "$VOLUME_ROOT/models/text_encoders/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/text_encoders/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
+     "$VOLUME_ROOT/models/text_encoders/"
+  rm -rf "$VOLUME_ROOT/models/text_encoders/split_files"
+fi
+
+echo ""
+echo "=== [9/9] Downloading CLIP Vision H for Wan (~2.5 GB) ==="
+hf download Comfy-Org/Wan_2.2_ComfyUI_Repackaged \
+  split_files/clip_vision/clip_vision_h.safetensors \
+  --local-dir "$VOLUME_ROOT/models/clip_vision"
+if [ -f "$VOLUME_ROOT/models/clip_vision/split_files/clip_vision/clip_vision_h.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/clip_vision/split_files/clip_vision/clip_vision_h.safetensors" \
+     "$VOLUME_ROOT/models/clip_vision/"
+  rm -rf "$VOLUME_ROOT/models/clip_vision/split_files"
+fi
 
 echo ""
 echo "=== Bootstrap complete. Volume contents: ==="

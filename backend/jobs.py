@@ -75,6 +75,30 @@ class JobRegistry:
 
 registry = JobRegistry()
 
+
+def _input_names_for_slug(slug: str, input_ids: list[str]) -> list[str]:
+    """Map uploaded input IDs to the file names the workflow expects.
+
+    - text-to-image: no inputs.
+    - image-edit:    input[0] -> user_input.png  (FLUX Kontext LoadImage)
+    - character-swap: input[0] -> user_input_video.mp4  (VHS_LoadVideo)
+                      input[1] -> user_input_character.png  (LoadImage)
+    """
+    if slug == "character-swap":
+        return ["user_input_video.mp4", "user_input_character.png"][: len(input_ids)]
+    # default: first input gets the canonical image name, rest are numbered
+    return [
+        "user_input.png" if i == 0 else f"user_input_{i}.png"
+        for i in range(len(input_ids))
+    ]
+
+
+# Per-slug max poll duration (seconds). Video jobs need more headroom.
+_MAX_POLL_SECONDS: dict[str, int] = {
+    "character-swap": 1500,  # 25 min for video generation
+}
+
+
 # Keep strong references to fire-and-forget tasks so they aren't GC'd mid-run.
 _running_tasks: set[asyncio.Task] = set()
 
@@ -107,11 +131,12 @@ async def run_job(
         registry.update(job_id, status="failed", error=f"workflow build: {e}")
         return
 
-    # Resolve uploaded inputs to base64 payloads. The workflow JSON references
-    # them by a fixed name ("user_input.png"); first input wins.
+    # Resolve uploaded inputs to base64 payloads. Each slug has its own naming
+    # convention so the workflow JSON can reference the inputs by a fixed name.
     images_payload: list[dict] = []
     if input_ids:
-        for i, input_id in enumerate(input_ids):
+        names = _input_names_for_slug(slug, input_ids)
+        for input_id, name in zip(input_ids, names):
             try:
                 path = storage.resolve_input(input_id)
                 raw = path.read_bytes()
@@ -122,7 +147,6 @@ async def run_job(
                     error=f"upload {input_id}: {e}",
                 )
                 return
-            name = "user_input.png" if i == 0 else f"user_input_{i}.png"
             images_payload.append({"name": name, "image": base64.b64encode(raw).decode("ascii")})
 
     try:
@@ -137,7 +161,10 @@ async def run_job(
         registry.update(job_id, runpod_status=data.get("status"))
 
     try:
-        result = await client.wait_for_completion(request_id, on_status=_on_status)
+        max_seconds = _MAX_POLL_SECONDS.get(slug)
+        result = await client.wait_for_completion(
+            request_id, max_seconds=max_seconds, on_status=_on_status
+        )
     except RunPodError as e:
         registry.update(job_id, status="failed", error=f"poll: {e}")
         return
@@ -152,21 +179,31 @@ async def run_job(
         return
 
     output = result.get("output") or {}
-    images = output.get("images")
-    if images is None:
-        # Some workers return {"output": [...]} directly
-        images = output if isinstance(output, list) else []
-    if not isinstance(images, list):
-        images = [images]
+
+    # worker-comfyui returns image outputs under "images". Video / gif outputs
+    # from VHS_VideoCombine end up under "gifs" (ComfyUI's UI convention) or
+    # similar keys. We harvest all known output buckets.
+    candidates: list = []
+    if isinstance(output, dict):
+        for key in ("images", "gifs", "videos", "files"):
+            v = output.get(key)
+            if isinstance(v, list):
+                candidates.extend(v)
+            elif v is not None:
+                candidates.append(v)
+    elif isinstance(output, list):
+        candidates = output
 
     output_files: list[str] = []
-    for i, item in enumerate(images):
+    for i, item in enumerate(candidates):
         data: str | None = None
-        name = f"{i:04d}.png"
+        name = f"{i:04d}.png"  # fallback
         if isinstance(item, dict):
-            data = item.get("data") or item.get("image")
+            data = item.get("data") or item.get("image") or item.get("video")
             if "filename" in item:
                 name = item["filename"]
+            elif "name" in item:
+                name = item["name"]
         elif isinstance(item, str):
             data = item
 
@@ -186,7 +223,13 @@ async def run_job(
         registry.update(
             job_id,
             status="failed",
-            error=f"No decodable outputs in RunPod response. Raw output keys: {list(output.keys()) if isinstance(output, dict) else type(output).__name__}",
+            error=(
+                "No decodable outputs in RunPod response. Raw output keys: "
+                f"{list(output.keys()) if isinstance(output, dict) else type(output).__name__}. "
+                "If the workflow uses VHS_VideoCombine, worker-comfyui (5.8.x) may not "
+                "return video files by default - we'll need to add a SaveImage frame-output "
+                "fallback or configure S3 output."
+            ),
         )
         return
 

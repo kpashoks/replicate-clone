@@ -31,15 +31,29 @@ class ImageEditParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+class CharacterSwapParams(BaseModel):
+    prompt: str = Field(
+        "",
+        max_length=2000,
+        description="Optional scene/style context for the swap (Wan focuses on motion + identity from the inputs).",
+    )
+    steps: int = Field(20, ge=1, le=50)
+    fps: int = Field(16, ge=8, le=30)
+    frames: int = Field(81, ge=17, le=161, description="Number of frames to generate (~5-10 s at 16 fps).")
+    seed: int = Field(-1, description="-1 means random")
+
+
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "image-edit": ImageEditParams,
+    "character-swap": CharacterSwapParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
 _MIN_INPUT_IDS: dict[str, int] = {
     "text-to-image": 0,
     "image-edit": 1,
+    "character-swap": 2,  # [source_video, reference_character_image]
 }
 
 

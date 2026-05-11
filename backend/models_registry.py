@@ -47,7 +47,7 @@ REGISTRY: dict[str, ModelEntry] = {
         accepts_image=True,
         accepts_video=True,
         stage=1,
-        available=False,
+        available=True,
     ),
     "scail-2char": ModelEntry(
         slug="scail-2char",

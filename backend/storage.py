@@ -8,6 +8,8 @@ from config import settings
 
 _SAFE_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 _ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+_ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
+_ALLOWED_UPLOAD_EXTS = _ALLOWED_IMAGE_EXTS | _ALLOWED_VIDEO_EXTS
 
 
 def new_job_id() -> str:
@@ -53,9 +55,9 @@ def save_upload(file_bytes: bytes, filename: str) -> dict:
     Returns a dict with id, url, name, size.
     """
     ext = Path(filename).suffix.lower() or ".bin"
-    if ext not in _ALLOWED_IMAGE_EXTS:
+    if ext not in _ALLOWED_UPLOAD_EXTS:
         raise ValueError(
-            f"Unsupported file extension '{ext}'. Allowed: {sorted(_ALLOWED_IMAGE_EXTS)}"
+            f"Unsupported file extension '{ext}'. Allowed: {sorted(_ALLOWED_UPLOAD_EXTS)}"
         )
 
     h = hashlib.sha256(file_bytes).hexdigest()[:16]

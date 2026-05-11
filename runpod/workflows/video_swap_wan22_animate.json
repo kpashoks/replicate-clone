@@ -1,0 +1,136 @@
+{
+  "_comment": "Wan 2.2 Animate single-character replacement (M4 v1). Structure based on the comfyanonymous native template at https://docs.comfy.org/tutorials/video/wan/wan2-2-animate. The reference character is loaded as 'user_input_character.png' (matching the name our backend sends to RunPod). The source video is loaded as 'user_input_video.mp4'. Placeholders __PROMPT__, __SEED__, __STEPS__, __FPS__, __FRAMES__, __OUTPUT_PREFIX__ are filled in by backend/workflows.py before submission. If a node-level error surfaces on first run, export your own working workflow from ComfyUI desktop in API format and replace this file (keeping the same placeholders).",
+
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "wan2.2_animate_14B_bf16.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "user_input_character.png"
+    }
+  },
+  "6": {
+    "class_type": "VHS_LoadVideo",
+    "inputs": {
+      "video": "user_input_video.mp4",
+      "force_rate": "__FPS__",
+      "force_size": "Disabled",
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": "__FRAMES__",
+      "skip_first_frames": 0,
+      "select_every_nth": 1
+    }
+  },
+  "7": {
+    "class_type": "DWPreprocessor",
+    "inputs": {
+      "image": ["6", 0],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": 512,
+      "bbox_detector": "yolox_l.onnx",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt"
+    }
+  },
+  "8": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "__PROMPT__",
+      "clip": ["2", 0]
+    }
+  },
+  "9": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality, watermark, distorted face, deformed limbs",
+      "clip": ["2", 0]
+    }
+  },
+  "10": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": ["4", 0],
+      "image": ["5", 0],
+      "crop": "center"
+    }
+  },
+  "11": {
+    "class_type": "WanAnimateToVideo",
+    "inputs": {
+      "positive": ["8", 0],
+      "negative": ["9", 0],
+      "vae": ["3", 0],
+      "clip_vision_output": ["10", 0],
+      "reference_image": ["5", 0],
+      "pose_video": ["7", 0],
+      "source_video": ["6", 0],
+      "width": 480,
+      "height": 832,
+      "length": "__FRAMES__",
+      "batch_size": 1
+    }
+  },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["11", 0],
+      "negative": ["11", 1],
+      "latent_image": ["11", 2],
+      "seed": "__SEED__",
+      "steps": "__STEPS__",
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "13": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["12", 0],
+      "vae": ["3", 0]
+    }
+  },
+  "14": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["13", 0],
+      "frame_rate": "__FPS__",
+      "loop_count": 0,
+      "filename_prefix": "__OUTPUT_PREFIX__",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": false,
+      "pingpong": false,
+      "save_output": true
+    }
+  }
+}
