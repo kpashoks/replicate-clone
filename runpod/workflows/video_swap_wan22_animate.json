@@ -1,6 +1,4 @@
 {
-  "_comment": "Wan 2.2 Animate single-character replacement (M4 v1). Structure based on the comfyanonymous native template at https://docs.comfy.org/tutorials/video/wan/wan2-2-animate. The reference character is loaded as 'user_input_character.png' (matching the name our backend sends to RunPod). The source video is loaded as 'user_input_video.mp4'. Placeholders __PROMPT__, __SEED__, __STEPS__, __FPS__, __FRAMES__, __OUTPUT_PREFIX__ are filled in by backend/workflows.py before submission. If a node-level error surfaces on first run, export your own working workflow from ComfyUI desktop in API format and replace this file (keeping the same placeholders).",
-
   "1": {
     "class_type": "UNETLoader",
     "inputs": {
