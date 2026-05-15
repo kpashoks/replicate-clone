@@ -88,6 +88,8 @@
       "height": 480,
       "length": "__FRAMES__",
       "batch_size": 1,
+      "continue_motion_max_frames": 5,
+      "video_frame_offset": 0,
       "clip_vision_output": ["10", 0],
       "reference_image": ["5", 0],
       "pose_video": ["7", 0],
