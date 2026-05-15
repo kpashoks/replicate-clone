@@ -23,6 +23,24 @@ class TextToImageParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+# SDXL-tuned defaults: cfg ~7 (vs FLUX 1.0), explicit negative prompt, 25 steps.
+_SDXL_DEFAULT_NEGATIVE = (
+    "low quality, worst quality, blurry, jpeg artifacts, watermark, signature, "
+    "text, deformed, distorted, mutated, extra fingers, missing fingers, "
+    "out of frame, cropped"
+)
+
+
+class JuggernautParams(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    negative_prompt: str = Field(_SDXL_DEFAULT_NEGATIVE, max_length=2000)
+    width: int = Field(1024, ge=512, le=2048)
+    height: int = Field(1024, ge=512, le=2048)
+    steps: int = Field(25, ge=1, le=60)
+    cfg: float = Field(7.0, ge=1.0, le=15.0)
+    seed: int = Field(-1, description="-1 means random")
+
+
 class ImageEditParams(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     steps: int = Field(20, ge=1, le=50)
@@ -45,6 +63,7 @@ class CharacterSwapParams(BaseModel):
 
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
+    "juggernaut-xl": JuggernautParams,
     "image-edit": ImageEditParams,
     "character-swap": CharacterSwapParams,
 }
@@ -52,6 +71,7 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
 # Per-slug minimum-input requirements (number of uploaded files needed).
 _MIN_INPUT_IDS: dict[str, int] = {
     "text-to-image": 0,
+    "juggernaut-xl": 0,
     "image-edit": 1,
     "character-swap": 2,  # [source_video, reference_character_image]
 }

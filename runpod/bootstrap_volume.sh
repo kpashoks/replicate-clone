@@ -13,17 +13,18 @@
 #        export HF_TOKEN=hf_xxxxxxxxxx
 #        bash bootstrap_volume.sh
 #
-# Expected runtime (full bootstrap): ~60-90 minutes.
-# Final disk usage: ~98 GB
-#   flux1-dev fp16                  ~24 GB
-#   flux1-kontext-dev fp16          ~24 GB
-#   wan2.2_animate_14B bf16         ~28 GB
-#   umt5_xxl fp8 (Wan)              ~5 GB
-#   t5xxl_fp16 (FLUX)               ~9.5 GB
-#   wan_2.1_vae                     ~500 MB
-#   clip_vision_h                   ~2.5 GB
-#   clip_l                          ~250 MB
-#   ae (FLUX VAE)                   ~335 MB
+# Expected runtime (full bootstrap): ~70-100 minutes.
+# Final disk usage: ~105 GB
+#   flux1-dev fp16                       ~24 GB
+#   flux1-kontext-dev fp16               ~24 GB
+#   wan2.2_animate_14B bf16              ~28 GB
+#   juggernaut-XL v9 (SDXL all-in-one)   ~6.6 GB
+#   umt5_xxl fp8 (Wan)                   ~5 GB
+#   t5xxl_fp16 (FLUX)                    ~9.5 GB
+#   wan_2.1_vae                          ~500 MB
+#   clip_vision_h                        ~1.3 GB
+#   clip_l                               ~250 MB
+#   ae (FLUX VAE)                        ~335 MB
 #
 # The script is idempotent: re-running skips files that already exist on disk.
 # If your volume already has FLUX assets (M2/M3 bootstrap done), this run only
@@ -62,6 +63,7 @@ fi
 
 echo "=== Creating directory structure under $VOLUME_ROOT ==="
 mkdir -p \
+  "$VOLUME_ROOT/models/checkpoints" \
   "$VOLUME_ROOT/models/diffusion_models" \
   "$VOLUME_ROOT/models/text_encoders" \
   "$VOLUME_ROOT/models/vae" \
@@ -159,7 +161,7 @@ if [ -f "$VOLUME_ROOT/models/text_encoders/split_files/text_encoders/umt5_xxl_fp
 fi
 
 echo ""
-echo "=== [9/9] Downloading CLIP Vision H for Wan (~1.3 GB) ==="
+echo "=== [9/10] Downloading CLIP Vision H for Wan (~1.3 GB) ==="
 # CLIP Vision lives in the Wan 2.1 repackage, not 2.2 (the 2.2 repackage has
 # no clip_vision subdir; the file is shared across Wan versions).
 hf download Comfy-Org/Wan_2.1_ComfyUI_repackaged \
@@ -170,6 +172,12 @@ if [ -f "$VOLUME_ROOT/models/clip_vision/split_files/clip_vision/clip_vision_h.s
      "$VOLUME_ROOT/models/clip_vision/"
   rm -rf "$VOLUME_ROOT/models/clip_vision/split_files"
 fi
+
+echo ""
+echo "=== [10/10] Downloading Juggernaut XL v9 SDXL checkpoint (~6.6 GB) ==="
+# Single-file SDXL checkpoint (includes UNet + dual CLIP + VAE). Ungated.
+hf download RunDiffusion/Juggernaut-XL-v9 Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors \
+  --local-dir "$VOLUME_ROOT/models/checkpoints"
 
 echo ""
 echo "=== Bootstrap complete. Volume contents: ==="

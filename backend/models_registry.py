@@ -21,9 +21,18 @@ class ModelEntry(BaseModel):
 REGISTRY: dict[str, ModelEntry] = {
     "text-to-image": ModelEntry(
         slug="text-to-image",
-        label="Text to Image",
+        label="Text to Image (FLUX)",
         description="Generate an image from a text prompt using FLUX.1 [dev].",
         workflow_file="text2img_flux.json",
+        output_kind="image",
+        stage=1,
+        available=True,
+    ),
+    "juggernaut-xl": ModelEntry(
+        slug="juggernaut-xl",
+        label="Juggernaut XL (Photorealistic)",
+        description="SDXL photorealism workhorse. Uses dual CLIP + negative prompts. Slower but often more cinematic for portraits than FLUX.",
+        workflow_file="text2img_juggernaut.json",
         output_kind="image",
         stage=1,
         available=True,

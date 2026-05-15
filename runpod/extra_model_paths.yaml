@@ -7,6 +7,7 @@
 runpod_volume:
   base_path: /runpod-volume/ComfyUI/
   is_default: true
+  checkpoints: models/checkpoints/
   diffusion_models: models/diffusion_models/
   unet: models/diffusion_models/
   text_encoders: models/text_encoders/
