@@ -294,16 +294,18 @@ FRONTEND_URL=http://localhost:3000
 
 ### 11. Start the dev servers
 
-In two separate terminals:
+**Easy way (recommended):** double-click `start-dev.bat` from the repo root on Windows (or `bash start-dev.sh` on macOS/Linux/Git Bash). This opens both servers in separate windows and verifies the venv + node_modules exist first.
 
-**Terminal A — backend:**
+**Manual way (two terminals):**
+
+Terminal A — backend:
 ```
 cd backend
 .venv\Scripts\activate
 uvicorn main:app --port 8000 --reload
 ```
 
-**Terminal B — frontend:**
+Terminal B — frontend:
 ```
 cd frontend
 npm run dev
@@ -328,12 +330,25 @@ If everything works on first try, congratulations — that's unprecedented. If s
 
 ## Day-to-day usage
 
-After the one-time setup:
+After the one-time setup, starting the service is one command:
 
-1. Open two terminals
-2. `cd backend && .venv\Scripts\activate && uvicorn main:app --port 8000 --reload`
-3. `cd frontend && npm run dev`
-4. Browse to http://localhost:3000
+**Windows:** double-click `start-dev.bat` (or run it from a cmd window). Two new terminal windows open — one running uvicorn on port 8000, one running Next.js on port 3000.
+
+**macOS / Linux / Git Bash:**
+```
+bash start-dev.sh
+```
+Both servers run in this terminal; Ctrl+C stops both.
+
+Then open http://localhost:3000 in your browser.
+
+If you'd rather run them manually in two separate terminals:
+```
+cd backend && .venv\Scripts\activate && uvicorn main:app --port 8000 --reload
+```
+```
+cd frontend && npm run dev
+```
 
 When you're done, `Ctrl+C` in each terminal. RunPod endpoints with `Active workers = 0` automatically idle to $0/s after the idle timeout.
 
