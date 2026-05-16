@@ -29,6 +29,18 @@
       "image": "user_input_source.png"
     }
   },
+  "21": {
+    "class_type": "ImageResizeKJ",
+    "inputs": {
+      "image": ["5", 0],
+      "width": 1024,
+      "height": 1024,
+      "upscale_method": "lanczos",
+      "keep_proportion": true,
+      "divisible_by": 64,
+      "crop": "disabled"
+    }
+  },
   "6": {
     "class_type": "IPAdapterAdvanced",
     "inputs": {
@@ -47,7 +59,7 @@
   "7": {
     "class_type": "DWPreprocessor",
     "inputs": {
-      "image": ["5", 0],
+      "image": ["21", 0],
       "detect_hand": "enable",
       "detect_body": "enable",
       "detect_face": "enable",
@@ -99,7 +111,7 @@
   "20": {
     "class_type": "GetImageSize",
     "inputs": {
-      "image": ["5", 0]
+      "image": ["21", 0]
     }
   },
   "13": {
