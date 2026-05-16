@@ -49,6 +49,29 @@ class ImageEditParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+class ImageCharSwapParams(BaseModel):
+    """SDXL + IP-Adapter + ControlNet OpenPose character replacement in a still image."""
+    prompt: str = Field(
+        "",
+        max_length=2000,
+        description="Optional scene/style direction. Identity comes from the reference image.",
+    )
+    negative_prompt: str = Field(_SDXL_DEFAULT_NEGATIVE, max_length=2000)
+    width: int = Field(1024, ge=512, le=2048)
+    height: int = Field(1024, ge=512, le=2048)
+    steps: int = Field(25, ge=1, le=60)
+    cfg: float = Field(7.0, ge=1.0, le=15.0)
+    identity_strength: float = Field(
+        1.0, ge=0.0, le=2.0,
+        description="IP-Adapter weight. 1.0 = full identity transfer; lower = more prompt influence.",
+    )
+    pose_strength: float = Field(
+        0.7, ge=0.0, le=1.5,
+        description="ControlNet OpenPose strength. 0.7 = preserves source pose with some flexibility.",
+    )
+    seed: int = Field(-1, description="-1 means random")
+
+
 class CharacterSwapParams(BaseModel):
     prompt: str = Field(
         "",
@@ -65,6 +88,7 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "juggernaut-xl": JuggernautParams,
     "image-edit": ImageEditParams,
+    "image-char-swap": ImageCharSwapParams,
     "character-swap": CharacterSwapParams,
 }
 
@@ -73,6 +97,7 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "text-to-image": 0,
     "juggernaut-xl": 0,
     "image-edit": 1,
+    "image-char-swap": 2,  # [source_image, reference_character_image]
     "character-swap": 2,  # [source_video, reference_character_image]
 }
 

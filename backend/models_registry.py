@@ -47,6 +47,16 @@ REGISTRY: dict[str, ModelEntry] = {
         stage=1,
         available=True,
     ),
+    "image-char-swap": ModelEntry(
+        slug="image-char-swap",
+        label="Image Character Swap",
+        description="Replace the person in a source image with a different reference character. Uses Juggernaut XL + IP-Adapter (identity) + ControlNet OpenPose (pose preservation).",
+        workflow_file="charswap_juggernaut.json",
+        output_kind="image",
+        accepts_image=True,
+        stage=1,
+        available=True,
+    ),
     "character-swap": ModelEntry(
         slug="character-swap",
         label="Character Swap (Video)",

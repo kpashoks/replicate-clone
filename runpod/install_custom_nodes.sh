@@ -39,11 +39,19 @@ echo "[install_custom_nodes] cloning ComfyUI-GGUF..."
 git clone --depth 1 https://github.com/city96/ComfyUI-GGUF.git
 
 # -----------------------------------------------------------------------------
+# M3.5 - Image Character Swap (Juggernaut + IPAdapter + ControlNet OpenPose)
+# -----------------------------------------------------------------------------
+
+# cubiq's IPAdapter Plus suite - SDXL identity transfer via image conditioning.
+echo "[install_custom_nodes] cloning ComfyUI_IPAdapter_plus..."
+git clone --depth 1 https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
+
+# -----------------------------------------------------------------------------
 # Install any Python deps the nodes need.
 # Pip failures are non-fatal so an optional dep doesn't kill the whole build.
 # -----------------------------------------------------------------------------
 
-for d in ComfyUI-KJNodes ComfyUI-VideoHelperSuite comfyui_controlnet_aux ComfyUI-GGUF; do
+for d in ComfyUI-KJNodes ComfyUI-VideoHelperSuite comfyui_controlnet_aux ComfyUI-GGUF ComfyUI_IPAdapter_plus; do
   if [ -f "$CUSTOM_NODES_DIR/$d/requirements.txt" ]; then
     echo "[install_custom_nodes] pip install for $d..."
     pip install --no-cache-dir -r "$CUSTOM_NODES_DIR/$d/requirements.txt" || \

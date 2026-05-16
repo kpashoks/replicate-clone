@@ -397,8 +397,7 @@ export default function JuggernautPage() {
                         Open full size
                       </a>
                       <a
-                        href={outputImageUrl}
-                        download
+                        href={`${outputImageUrl}?download=1`}
                         className={buttonVariants({
                           variant: "outline",
                           size: "sm",

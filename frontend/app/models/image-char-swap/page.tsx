@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { EnhanceDiff } from "@/components/EnhanceDiff";
 import { ImageDropzone } from "@/components/ImageDropzone";
-import { VideoDropzone } from "@/components/VideoDropzone";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -25,39 +24,42 @@ import {
   submitJob,
   type UploadResponse,
 } from "@/lib/api";
-import {
-  TERMINAL_STATUSES,
-  type Job,
-} from "@/lib/types";
+import { TERMINAL_STATUSES, type Job } from "@/lib/types";
 
-const POLL_INTERVAL_MS = 3000; // slower poll for long-running video jobs
+const POLL_INTERVAL_MS = 2000;
 
-type CharacterSwapFormParams = {
+type FormParams = {
   prompt: string;
+  negative_prompt: string;
+  width: number;
+  height: number;
   steps: number;
-  fps: number;
-  frames: number;
+  cfg: number;
+  identity_strength: number;
+  pose_strength: number;
   seed: number;
 };
 
-const DEFAULTS: CharacterSwapFormParams = {
+const DEFAULT_NEGATIVE =
+  "low quality, worst quality, blurry, jpeg artifacts, watermark, signature, " +
+  "text, deformed, distorted, mutated, extra fingers, missing fingers, " +
+  "out of frame, cropped";
+
+const DEFAULTS: FormParams = {
   prompt: "",
-  steps: 20,
-  fps: 16,
-  frames: 81, // ~5 s at 16 fps
+  negative_prompt: DEFAULT_NEGATIVE,
+  width: 1024,
+  height: 1024,
+  steps: 25,
+  cfg: 7.0,
+  identity_strength: 1.0,
+  pose_strength: 0.7,
   seed: -1,
 };
 
-const VIDEO_EXTS = [".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"];
-
-function isVideoUrl(url: string): boolean {
-  const lower = url.toLowerCase();
-  return VIDEO_EXTS.some((ext) => lower.endsWith(ext));
-}
-
-export default function CharacterSwapPage() {
-  const [params, setParams] = useState<CharacterSwapFormParams>(DEFAULTS);
-  const [video, setVideo] = useState<UploadResponse | null>(null);
+export default function ImageCharSwapPage() {
+  const [params, setParams] = useState<FormParams>(DEFAULTS);
+  const [source, setSource] = useState<UploadResponse | null>(null);
   const [character, setCharacter] = useState<UploadResponse | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -83,7 +85,10 @@ export default function CharacterSwapPage() {
           setCurrentJob(job);
           if (TERMINAL_STATUSES.has(job.status)) {
             stopTimers();
-            if (job.status === "succeeded" && typeof job.params.seed === "number") {
+            if (
+              job.status === "succeeded" &&
+              typeof job.params.seed === "number"
+            ) {
               setParams((p) => ({ ...p, seed: job.params.seed as number }));
             }
             return;
@@ -115,16 +120,16 @@ export default function CharacterSwapPage() {
   useEffect(() => stopTimers, [stopTimers]);
 
   const onSubmit = async () => {
-    if (!video || !character) {
-      setSubmitError("Please upload both a source video and a reference character image.");
+    if (!source || !character) {
+      setSubmitError("Please upload both a source image and a reference character image.");
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     stopTimers();
     try {
-      // Order matters: backend expects [video_id, character_id]
-      const res = await submitJob("character-swap", params, [video.id, character.id]);
+      // Order matters: backend expects [source_id, character_id]
+      const res = await submitJob("image-char-swap", params, [source.id, character.id]);
       const job = await getJob(res.job_id);
       setCurrentJob(job);
       pollJob(res.job_id);
@@ -151,11 +156,10 @@ export default function CharacterSwapPage() {
 
   const isRunning = currentJob && !TERMINAL_STATUSES.has(currentJob.status);
   const isSucceeded = currentJob?.status === "succeeded";
-  const outputUrl =
+  const outputImageUrl =
     isSucceeded && currentJob.output_files[0]
       ? fileUrl(currentJob.output_files[0])
       : null;
-  const durationSec = (params.frames / params.fps).toFixed(1);
 
   return (
     <main className="container mx-auto py-8 px-4 max-w-6xl">
@@ -169,11 +173,13 @@ export default function CharacterSwapPage() {
       </nav>
 
       <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Character Swap (Video)</h1>
+        <h1 className="text-3xl font-bold tracking-tight">
+          Image Character Swap
+        </h1>
         <p className="text-muted-foreground mt-1">
-          Replace one character in a short video clip with a reference character
-          image, using Wan 2.2 Animate. Wan transfers the source motion to the
-          new character.
+          Replace the person in a source image with a different reference
+          character. Pose, framing, and composition are preserved via ControlNet
+          OpenPose; identity comes from IP-Adapter on Juggernaut XL.
         </p>
       </header>
 
@@ -183,21 +189,20 @@ export default function CharacterSwapPage() {
             <CardTitle>Inputs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            <VideoDropzone
-              onUploaded={setVideo}
-              label="Source video (the motion to copy)"
-              maxMB={16}
+            <ImageDropzone
+              onUploaded={setSource}
+              label="Source image (the pose / scene to keep)"
             />
 
             <ImageDropzone
               onUploaded={setCharacter}
-              label="Reference character (the new face/body)"
+              label="Reference character (the identity to insert)"
             />
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="prompt">
-                  Scene context{" "}
+                  Scene direction{" "}
                   <span className="text-muted-foreground font-normal text-xs">
                     (optional)
                   </span>
@@ -215,72 +220,150 @@ export default function CharacterSwapPage() {
               </div>
               <Textarea
                 id="prompt"
-                placeholder="e.g. dancing in a sunlit forest, cinematic"
+                placeholder="e.g. cinematic, golden hour, photorealistic"
                 rows={2}
                 value={params.prompt}
                 onChange={(e) =>
                   setParams((p) => ({ ...p, prompt: e.target.value }))
                 }
               />
+              <p className="text-xs text-muted-foreground">
+                Identity comes from the character image — prompt only nudges
+                style/lighting/mood.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="negative">Negative prompt</Label>
+              <Textarea
+                id="negative"
+                rows={2}
+                value={params.negative_prompt}
+                onChange={(e) =>
+                  setParams((p) => ({ ...p, negative_prompt: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-baseline">
+                <Label>Identity strength (IP-Adapter)</Label>
+                <span className="text-sm font-mono text-muted-foreground">
+                  {params.identity_strength.toFixed(2)}
+                </span>
+              </div>
+              <Slider
+                value={[params.identity_strength]}
+                min={0}
+                max={2}
+                step={0.05}
+                onValueChange={([v]) =>
+                  setParams((p) => ({ ...p, identity_strength: v }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                1.0 = full identity transfer (recommended). Lower = more prompt
+                influence; higher (1.2–1.5) for very stubborn face mismatches.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-baseline">
+                <Label>Pose strength (ControlNet)</Label>
+                <span className="text-sm font-mono text-muted-foreground">
+                  {params.pose_strength.toFixed(2)}
+                </span>
+              </div>
+              <Slider
+                value={[params.pose_strength]}
+                min={0}
+                max={1.5}
+                step={0.05}
+                onValueChange={([v]) =>
+                  setParams((p) => ({ ...p, pose_strength: v }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                0.7 default. Higher locks pose more rigidly; lower lets the
+                model deviate (better proportions when source pose is unusual).
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex justify-between items-baseline">
-                  <Label>FPS</Label>
+                  <Label>Width</Label>
                   <span className="text-sm font-mono text-muted-foreground">
-                    {params.fps}
+                    {params.width}
                   </span>
                 </div>
                 <Slider
-                  value={[params.fps]}
-                  min={8}
-                  max={30}
-                  step={1}
+                  value={[params.width]}
+                  min={512}
+                  max={2048}
+                  step={64}
                   onValueChange={([v]) =>
-                    setParams((p) => ({ ...p, fps: v }))
+                    setParams((p) => ({ ...p, width: v }))
                   }
                 />
               </div>
-
               <div className="space-y-2">
                 <div className="flex justify-between items-baseline">
-                  <Label>Frames</Label>
+                  <Label>Height</Label>
                   <span className="text-sm font-mono text-muted-foreground">
-                    {params.frames}
+                    {params.height}
                   </span>
                 </div>
                 <Slider
-                  value={[params.frames]}
-                  min={17}
-                  max={161}
-                  step={8}
+                  value={[params.height]}
+                  min={512}
+                  max={2048}
+                  step={64}
                   onValueChange={([v]) =>
-                    setParams((p) => ({ ...p, frames: v }))
+                    setParams((p) => ({ ...p, height: v }))
                   }
                 />
               </div>
             </div>
             <p className="text-xs text-muted-foreground -mt-3">
-              Output duration ≈ {durationSec} s
+              For best pose preservation, match the source image's aspect ratio.
             </p>
 
-            <div className="space-y-2">
-              <div className="flex justify-between items-baseline">
-                <Label>Steps</Label>
-                <span className="text-sm font-mono text-muted-foreground">
-                  {params.steps}
-                </span>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <div className="flex justify-between items-baseline">
+                  <Label>Steps</Label>
+                  <span className="text-sm font-mono text-muted-foreground">
+                    {params.steps}
+                  </span>
+                </div>
+                <Slider
+                  value={[params.steps]}
+                  min={10}
+                  max={60}
+                  step={1}
+                  onValueChange={([v]) =>
+                    setParams((p) => ({ ...p, steps: v }))
+                  }
+                />
               </div>
-              <Slider
-                value={[params.steps]}
-                min={1}
-                max={50}
-                step={1}
-                onValueChange={([v]) =>
-                  setParams((p) => ({ ...p, steps: v }))
-                }
-              />
+              <div className="space-y-2">
+                <div className="flex justify-between items-baseline">
+                  <Label>CFG</Label>
+                  <span className="text-sm font-mono text-muted-foreground">
+                    {params.cfg.toFixed(1)}
+                  </span>
+                </div>
+                <Slider
+                  value={[params.cfg]}
+                  min={1}
+                  max={15}
+                  step={0.5}
+                  onValueChange={([v]) =>
+                    setParams((p) => ({ ...p, cfg: v }))
+                  }
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -321,16 +404,16 @@ export default function CharacterSwapPage() {
 
             <Button
               onClick={onSubmit}
-              disabled={submitting || !!isRunning || !video || !character}
+              disabled={submitting || !!isRunning || !source || !character}
               className="w-full"
               size="lg"
             >
               {submitting
                 ? "Submitting…"
                 : isRunning
-                  ? "Running… (this can take 10–15 min)"
-                  : !video || !character
-                    ? "Upload video + character first"
+                  ? "Running…"
+                  : !source || !character
+                    ? "Upload both images first"
                     : "Run"}
             </Button>
 
@@ -349,9 +432,9 @@ export default function CharacterSwapPage() {
           <CardContent className="space-y-4">
             {!currentJob && (
               <div className="rounded-md border border-dashed border-muted-foreground/40 p-8 text-center text-sm text-muted-foreground">
-                Upload a source video + a reference character, then click Run.
-                Wan 2.2 Animate inference typically takes 8–15 min for a 5 s
-                clip on an A6000.
+                Upload a source image + a reference character, optionally type a
+                scene direction, and click Run. Expect ~60–90 s warm, ~3–4 min
+                cold.
               </div>
             )}
 
@@ -363,28 +446,17 @@ export default function CharacterSwapPage() {
                   onCancel={onCancel}
                 />
 
-                {outputUrl && (
+                {outputImageUrl && (
                   <div className="space-y-2">
-                    {isVideoUrl(outputUrl) ? (
-                      <video
-                        src={outputUrl}
-                        controls
-                        loop
-                        className="w-full rounded-md border border-border"
-                      />
-                    ) : (
-                      // Fallback: if backend ends up writing a PNG/sequence,
-                      // show the first one. Useful while iterating on output handling.
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={outputUrl}
-                        alt="Output"
-                        className="w-full rounded-md border border-border"
-                      />
-                    )}
-                    <div className="flex gap-2 flex-wrap">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={outputImageUrl}
+                      alt="Output"
+                      className="w-full rounded-md border border-border"
+                    />
+                    <div className="flex gap-2">
                       <a
-                        href={outputUrl}
+                        href={outputImageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className={buttonVariants({
@@ -392,10 +464,10 @@ export default function CharacterSwapPage() {
                           size: "sm",
                         })}
                       >
-                        Open in new tab
+                        Open full size
                       </a>
                       <a
-                        href={`${outputUrl}?download=1`}
+                        href={`${outputImageUrl}?download=1`}
                         className={buttonVariants({
                           variant: "outline",
                           size: "sm",
@@ -404,12 +476,6 @@ export default function CharacterSwapPage() {
                         Download
                       </a>
                     </div>
-                    {currentJob.output_files.length > 1 && (
-                      <p className="text-xs text-muted-foreground">
-                        {currentJob.output_files.length} output files total.
-                        See <code>data/outputs/{currentJob.id}/</code>.
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -428,7 +494,7 @@ export default function CharacterSwapPage() {
         open={enhanceOpen}
         onClose={() => setEnhanceOpen(false)}
         originalPrompt={params.prompt}
-        targetModel="character-swap"
+        targetModel="text-to-image"
         onAccept={(enhanced) =>
           setParams((p) => ({ ...p, prompt: enhanced }))
         }

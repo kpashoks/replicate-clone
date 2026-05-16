@@ -13,12 +13,14 @@
 #        export HF_TOKEN=hf_xxxxxxxxxx
 #        bash bootstrap_volume.sh
 #
-# Expected runtime (full bootstrap): ~70-100 minutes.
-# Final disk usage: ~105 GB
+# Expected runtime (full bootstrap): ~75-110 minutes.
+# Final disk usage: ~108 GB
 #   flux1-dev fp16                       ~24 GB
 #   flux1-kontext-dev fp16               ~24 GB
 #   wan2.2_animate_14B bf16              ~28 GB
 #   juggernaut-XL v9 (SDXL all-in-one)   ~6.6 GB
+#   controlnet-openpose-sdxl-xinsir      ~2.5 GB
+#   ip-adapter-plus_sdxl_vit-h           ~700 MB
 #   umt5_xxl fp8 (Wan)                   ~5 GB
 #   t5xxl_fp16 (FLUX)                    ~9.5 GB
 #   wan_2.1_vae                          ~500 MB
@@ -71,6 +73,7 @@ mkdir -p \
   "$VOLUME_ROOT/models/upscale_models" \
   "$VOLUME_ROOT/models/clip_vision" \
   "$VOLUME_ROOT/models/controlnet" \
+  "$VOLUME_ROOT/models/ipadapter" \
   "$VOLUME_ROOT/custom_nodes" \
   "$VOLUME_ROOT/input" \
   "$VOLUME_ROOT/output"
@@ -174,10 +177,34 @@ if [ -f "$VOLUME_ROOT/models/clip_vision/split_files/clip_vision/clip_vision_h.s
 fi
 
 echo ""
-echo "=== [10/10] Downloading Juggernaut XL v9 SDXL checkpoint (~6.6 GB) ==="
+echo "=== [10/12] Downloading Juggernaut XL v9 SDXL checkpoint (~6.6 GB) ==="
 # Single-file SDXL checkpoint (includes UNet + dual CLIP + VAE). Ungated.
 hf download RunDiffusion/Juggernaut-XL-v9 Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors \
   --local-dir "$VOLUME_ROOT/models/checkpoints"
+
+echo ""
+echo "=== [11/12] Downloading IP-Adapter Plus SDXL ViT-H (~700 MB) ==="
+# IP-Adapter Plus reuses the existing clip_vision_h.safetensors from M4.
+# h94/IP-Adapter nests files under sdxl_models/.
+hf download h94/IP-Adapter sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors \
+  --local-dir "$VOLUME_ROOT/models/ipadapter"
+if [ -f "$VOLUME_ROOT/models/ipadapter/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/ipadapter/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors" \
+     "$VOLUME_ROOT/models/ipadapter/"
+  rm -rf "$VOLUME_ROOT/models/ipadapter/sdxl_models"
+fi
+
+echo ""
+echo "=== [12/12] Downloading ControlNet OpenPose SDXL (xinsir, ~2.5 GB) ==="
+# xinsir's variant is widely considered the best SDXL OpenPose ControlNet.
+# Renamed after download so it's distinguishable from any future controlnets.
+hf download xinsir/controlnet-openpose-sdxl-1.0 diffusion_pytorch_model.safetensors \
+  --local-dir "$VOLUME_ROOT/models/controlnet/_tmp_openpose"
+if [ -f "$VOLUME_ROOT/models/controlnet/_tmp_openpose/diffusion_pytorch_model.safetensors" ]; then
+  mv "$VOLUME_ROOT/models/controlnet/_tmp_openpose/diffusion_pytorch_model.safetensors" \
+     "$VOLUME_ROOT/models/controlnet/controlnet-openpose-sdxl-xinsir.safetensors"
+  rm -rf "$VOLUME_ROOT/models/controlnet/_tmp_openpose"
+fi
 
 echo ""
 echo "=== Bootstrap complete. Volume contents: ==="

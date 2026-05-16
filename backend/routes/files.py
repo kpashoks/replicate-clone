@@ -16,7 +16,12 @@ _KIND_TO_SUBDIR = {
 
 
 @router.get("/{kind}/{job_id}/{name}")
-async def get_file(kind: str, job_id: str, name: str) -> FileResponse:
+async def get_file(
+    kind: str,
+    job_id: str,
+    name: str,
+    download: bool = False,
+) -> FileResponse:
     sub = _KIND_TO_SUBDIR.get(kind)
     if not sub:
         raise HTTPException(status_code=404, detail="Unknown file kind")
@@ -32,4 +37,10 @@ async def get_file(kind: str, job_id: str, name: str) -> FileResponse:
 
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Not found")
+
+    # When download=1 is passed, set filename which forces
+    # Content-Disposition: attachment so the browser saves it.
+    # Otherwise serve inline (used by <img src> and "open in new tab").
+    if download:
+        return FileResponse(target, filename=name)
     return FileResponse(target)

@@ -17,3 +17,4 @@ runpod_volume:
   upscale_models: models/upscale_models/
   clip_vision: models/clip_vision/
   controlnet: models/controlnet/
+  ipadapter: models/ipadapter/

@@ -86,6 +86,8 @@ def _input_names_for_slug(slug: str, input_ids: list[str]) -> list[str]:
     """
     if slug == "character-swap":
         return ["user_input_video.mp4", "user_input_character.png"][: len(input_ids)]
+    if slug == "image-char-swap":
+        return ["user_input_source.png", "user_input_character.png"][: len(input_ids)]
     # default: first input gets the canonical image name, rest are numbered
     return [
         "user_input.png" if i == 0 else f"user_input_{i}.png"
