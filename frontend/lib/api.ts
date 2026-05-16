@@ -59,14 +59,57 @@ export async function getJob(jobId: string): Promise<Job> {
   return jsonOrThrow<Job>(res);
 }
 
-export async function uploadFile(file: File): Promise<UploadResponse> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`${API_BASE}/api/uploads`, {
-    method: "POST",
-    body: fd,
+export async function uploadFile(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadResponse> {
+  // Uses XMLHttpRequest instead of fetch so we can:
+  //  (a) surface real upload progress in the UI
+  //  (b) get clearer, distinguishable errors (network vs server)
+  // fetch() throws a generic "TypeError: Failed to fetch" for both cases.
+  return new Promise<UploadResponse>((resolve, reject) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/api/uploads`, true);
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as UploadResponse);
+        } catch (parseErr) {
+          reject(new Error(`Upload succeeded (HTTP ${xhr.status}) but response was not JSON: ${String(parseErr)}`));
+        }
+        return;
+      }
+      let detail = xhr.statusText || "(no status text)";
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (body?.detail) detail = body.detail;
+      } catch {
+        // not JSON; leave detail as-is
+      }
+      reject(new Error(`Upload failed (HTTP ${xhr.status}): ${detail}`));
+    });
+    xhr.addEventListener("error", () => {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      reject(
+        new Error(
+          `Network error uploading "${file.name}" (${sizeMb} MB). ` +
+            "Backend may be down, request body may have exceeded a limit, or a browser extension blocked the request. " +
+            "Check DevTools Network tab for the failed request.",
+        ),
+      );
+    });
+    xhr.addEventListener("abort", () => {
+      reject(new Error("Upload aborted."));
+    });
+    xhr.send(fd);
   });
-  return jsonOrThrow<UploadResponse>(res);
 }
 
 export async function enhancePrompt(

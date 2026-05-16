@@ -7,10 +7,11 @@ import storage
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
 
-# Cap upload size at 16 MB. Images are typically 2-5 MB; short video clips for
-# Wan 2.2 Animate (5-10 s at 480p) usually weigh 3-15 MB. Base64 encoding adds
-# ~33% overhead, so 16 MB raw becomes ~21 MB on the wire to RunPod.
-MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+# Cap upload size at 32 MB. Images are typically 2-5 MB; short video clips for
+# Wan 2.2 Animate (5-10 s) at 720p can be 10-25 MB. Base64 encoding adds ~33%
+# overhead, so 32 MB raw becomes ~42 MB on the wire to RunPod /run (which
+# permits up to ~50 MB per request).
+MAX_UPLOAD_BYTES = 32 * 1024 * 1024
 
 
 class UploadResponse(BaseModel):

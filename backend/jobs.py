@@ -4,11 +4,13 @@ import json
 import logging
 import threading
 import time
+import urllib.request
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 import storage
 import workflows
+from config import settings
 from runpod_client import RunPodClient, RunPodError
 
 
@@ -182,6 +184,47 @@ async def run_job(
 
     output = result.get("output") or {}
 
+    # If the main worker returned 'success_no_images' (typical for video
+    # workflows where VHS_VideoCombine writes an mp4 worker-comfyui doesn't
+    # bubble back), try the companion downloader endpoint to fetch the
+    # output(s) from the Network Volume.
+    needs_downloader_fallback = (
+        isinstance(output, dict)
+        and output.get("status") == "success_no_images"
+        and not output.get("images")
+        and settings.RUNPOD_DOWNLOADER_ENDPOINT_ID
+    )
+    if needs_downloader_fallback:
+        try:
+            dl = RunPodClient(endpoint_id=settings.RUNPOD_DOWNLOADER_ENDPOINT_ID)
+            dl_resp = await dl.run_sync(
+                {"input": {"prefix": output_prefix, "delete_after": True}},
+                max_seconds=120,
+            )
+        except RunPodError as e:
+            registry.update(
+                job_id,
+                status="failed",
+                error=f"downloader failed: {e}",
+            )
+            return
+        dl_out = (dl_resp.get("output") or {}) if isinstance(dl_resp, dict) else {}
+        dl_files = dl_out.get("files") or []
+        if not dl_files:
+            registry.update(
+                job_id,
+                status="failed",
+                error=(
+                    "Downloader returned no files. "
+                    f"Looked for prefix '{output_prefix}*' on the volume. "
+                    f"Response: {json.dumps(dl_out)[:500]}"
+                ),
+            )
+            return
+        # Replace the output dict with the downloader's so the unified
+        # decoder below picks the files up.
+        output = {"images": dl_files}
+
     # worker-comfyui returns image outputs under "images". Video / gif outputs
     # from VHS_VideoCombine end up under "gifs" (ComfyUI's UI convention) or
     # similar keys. We harvest all known output buckets.
@@ -196,12 +239,25 @@ async def run_job(
     elif isinstance(output, list):
         candidates = output
 
+    # Persist the raw response for post-mortem when nothing decodes cleanly.
+    try:
+        debug_path = storage.output_dir(job_id) / "_runpod_response.json"
+        debug_path.write_text(
+            json.dumps(result, default=str)[:200_000],  # cap at ~200 KB
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
     output_files: list[str] = []
+    skipped_reasons: list[str] = []
     for i, item in enumerate(candidates):
         data: str | None = None
+        url_from_worker: str | None = None
         name = f"{i:04d}.png"  # fallback
         if isinstance(item, dict):
             data = item.get("data") or item.get("image") or item.get("video")
+            url_from_worker = item.get("url")  # S3 / signed URL case
             if "filename" in item:
                 name = item["filename"]
             elif "name" in item:
@@ -209,29 +265,72 @@ async def run_job(
         elif isinstance(item, str):
             data = item
 
+        if not data and url_from_worker:
+            # Worker is configured for S3 output and returned a URL instead
+            # of inline base64. Fetch and save locally.
+            try:
+                with urllib.request.urlopen(url_from_worker, timeout=60) as resp:
+                    raw = resp.read()
+            except Exception as e:
+                skipped_reasons.append(f"item[{i}] url fetch failed: {e}")
+                continue
+            saved = storage.write_output(job_id, name, raw)
+            output_files.append(saved)
+            continue
+
         if not data:
+            if isinstance(item, dict):
+                skipped_reasons.append(
+                    f"item[{i}] keys={list(item.keys())} - no data/image/video/url"
+                )
+            else:
+                skipped_reasons.append(f"item[{i}] type={type(item).__name__} unrecognized")
             continue
         if data.startswith("data:"):
             data = data.split(",", 1)[1]
         try:
             raw = base64.b64decode(data)
         except Exception as e:
-            log.warning("Could not base64-decode output %d: %s", i, e)
+            skipped_reasons.append(f"item[{i}] base64 decode failed: {e}")
             continue
-        url = storage.write_output(job_id, name, raw)
-        output_files.append(url)
+        saved = storage.write_output(job_id, name, raw)
+        output_files.append(saved)
 
     if not output_files:
+        # Build a maximally useful diagnostic message.
+        diag_parts: list[str] = []
+        if isinstance(output, dict):
+            diag_parts.append(f"output keys: {list(output.keys())}")
+            imgs = output.get("images")
+            if isinstance(imgs, list):
+                diag_parts.append(f"images list length: {len(imgs)}")
+                if imgs:
+                    first = imgs[0]
+                    if isinstance(first, dict):
+                        diag_parts.append(
+                            f"images[0] keys: {list(first.keys())} "
+                            f"(types: {[type(v).__name__ for v in first.values()]})"
+                        )
+                    else:
+                        diag_parts.append(f"images[0] type: {type(first).__name__}")
+            for k in ("gifs", "videos", "files"):
+                v = output.get(k)
+                if v is not None:
+                    diag_parts.append(f"{k}: {type(v).__name__} (len={len(v) if hasattr(v, '__len__') else 'n/a'})")
+            status_field = output.get("status")
+            if status_field is not None:
+                diag_parts.append(f"output.status = {status_field!r}")
+        else:
+            diag_parts.append(f"output type: {type(output).__name__}")
+        if skipped_reasons:
+            diag_parts.append("skipped: " + "; ".join(skipped_reasons[:5]))
+
+        diag_parts.append(f"full response saved to data/outputs/{job_id}/_runpod_response.json")
+
         registry.update(
             job_id,
             status="failed",
-            error=(
-                "No decodable outputs in RunPod response. Raw output keys: "
-                f"{list(output.keys()) if isinstance(output, dict) else type(output).__name__}. "
-                "If the workflow uses VHS_VideoCombine, worker-comfyui (5.8.x) may not "
-                "return video files by default - we'll need to add a SaveImage frame-output "
-                "fallback or configure S3 output."
-            ),
+            error="No decodable outputs in RunPod response. " + " | ".join(diag_parts),
         )
         return
 

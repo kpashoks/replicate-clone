@@ -10,6 +10,22 @@
 
 set -euo pipefail
 
+# -----------------------------------------------------------------------------
+# Redirect ComfyUI's output directory to the Network Volume
+# -----------------------------------------------------------------------------
+# By default ComfyUI writes outputs to /comfyui/output, which is on the
+# ephemeral container disk and gets reaped with the worker. Files that
+# worker-comfyui doesn't bubble back via the response (e.g., mp4 from
+# VHS_VideoCombine) would be lost. By symlinking /comfyui/output to a
+# directory on the Network Volume, those files persist after the worker
+# exits and can be fetched by a separate downloader endpoint.
+# /runpod-volume isn't mounted at build time, but the symlink target doesn't
+# need to exist at creation time; it resolves at runtime when the volume
+# mounts. ComfyUI's first SaveImage call creates the target dir on demand.
+echo "[install_custom_nodes] symlinking /comfyui/output -> /runpod-volume/output"
+rm -rf /comfyui/output
+ln -s /runpod-volume/output /comfyui/output
+
 CUSTOM_NODES_DIR="/comfyui/custom_nodes"
 mkdir -p "$CUSTOM_NODES_DIR"
 cd "$CUSTOM_NODES_DIR"

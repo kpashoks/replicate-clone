@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     RUNPOD_ENDPOINT_ID: str = ""
     RUNPOD_TIMEOUT_SECONDS: int = 600
 
+    # Optional companion Serverless endpoint that reads files off the Network
+    # Volume and returns them as base64. Used when worker-comfyui doesn't
+    # bubble certain outputs (notably mp4 from VHS_VideoCombine) back in its
+    # response. Leave empty if you haven't deployed it yet.
+    RUNPOD_DOWNLOADER_ENDPOINT_ID: str = ""
+
     QWEN_MODEL_ID: str = "Qwen/Qwen3-4B-Instruct-2507"
 
     DATA_DIR: str = "./data"

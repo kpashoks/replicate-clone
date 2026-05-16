@@ -17,11 +17,12 @@ export function VideoDropzone({
   onUploaded,
   label = "Source video",
   accept = "video/mp4,video/quicktime,video/webm",
-  maxMB = 16,
+  maxMB = 32,
 }: Props) {
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -39,12 +40,14 @@ export function VideoDropzone({
       }
       setUploading(true);
       setError(null);
+      setProgress(0);
       try {
-        const res = await uploadFile(file);
+        const res = await uploadFile(file, (pct) => setProgress(pct));
         setUpload(res);
         onUploaded(res);
       } catch (e) {
-        setError(String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
         setUpload(null);
         onUploaded(null);
       } finally {
@@ -111,7 +114,9 @@ export function VideoDropzone({
             disabled={uploading}
           />
           {uploading ? (
-            <span className="text-muted-foreground">Uploading…</span>
+            <span className="text-muted-foreground">
+              Uploading{progress > 0 ? `… ${progress}%` : "…"}
+            </span>
           ) : (
             <>
               <p className="font-medium">Drop a video here</p>
