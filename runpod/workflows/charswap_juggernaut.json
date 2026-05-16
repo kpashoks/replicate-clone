@@ -130,5 +130,12 @@
       "images": ["14", 0],
       "filename_prefix": "__OUTPUT_PREFIX__"
     }
+  },
+  "30": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["7", 0],
+      "filename_prefix": "__OUTPUT_PREFIX___debug_pose"
+    }
   }
 }
