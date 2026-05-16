@@ -22,5 +22,17 @@ set -e
 mkdir -p /runpod-volume/output 2>/dev/null || \
   echo "[entrypoint] WARNING: could not mkdir /runpod-volume/output (volume not mounted?)"
 
-# Defer to the base image's normal CMD.
-exec "$@"
+# Defer to the base image's startup. If Docker passed a CMD (i.e. the base
+# image declared one), use it. Otherwise fall back to the worker-comfyui
+# convention (/start.sh) so we don't exec with empty args and silently exit 0
+# (which causes RunPod to crash-loop the worker).
+if [ "$#" -gt 0 ]; then
+  echo "[entrypoint] exec'ing CMD: $*"
+  exec "$@"
+elif [ -x /start.sh ]; then
+  echo "[entrypoint] no CMD passed; falling back to /start.sh"
+  exec /start.sh
+else
+  echo "[entrypoint] ERROR: no CMD args and no /start.sh - cannot proceed"
+  exit 1
+fi
