@@ -35,6 +35,7 @@ type FormParams = {
   cfg: number;
   identity_strength: number;
   pose_strength: number;
+  pose_end_percent: number;
   seed: number;
 };
 
@@ -48,8 +49,9 @@ const DEFAULTS: FormParams = {
   negative_prompt: DEFAULT_NEGATIVE,
   steps: 25,
   cfg: 7.0,
-  identity_strength: 0.7,
-  pose_strength: 1.2,
+  identity_strength: 0.8,
+  pose_strength: 1.0,
+  pose_end_percent: 0.8,
   seed: -1,
 };
 
@@ -281,8 +283,31 @@ export default function ImageCharSwapPage() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                1.2 default. Above 1.5 can over-constrain (stiff/uncanny poses);
-                lower if proportions look off.
+                1.0 default (xinsir&apos;s recommended max). Above 1.0 the model
+                over-fits to keypoints and anatomy distorts (extra limbs etc).
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-baseline">
+                <Label>Pose end %</Label>
+                <span className="text-sm font-mono text-muted-foreground">
+                  {Math.round(params.pose_end_percent * 100)}%
+                </span>
+              </div>
+              <Slider
+                value={[params.pose_end_percent]}
+                min={0.3}
+                max={1}
+                step={0.05}
+                onValueChange={([v]) =>
+                  setParams((p) => ({ ...p, pose_end_percent: v }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Fraction of denoising during which the pose is enforced. 80%
+                default = pose locked early, model self-corrects anatomy in the
+                last 20%. Lower if limbs still look wrong.
               </p>
             </div>
 

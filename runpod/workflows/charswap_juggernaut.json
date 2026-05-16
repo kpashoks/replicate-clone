@@ -85,7 +85,7 @@
       "image": ["7", 0],
       "strength": "__POSE_STRENGTH__",
       "start_percent": 0.0,
-      "end_percent": 1.0
+      "end_percent": "__POSE_END_PERCENT__"
     }
   },
   "12": {

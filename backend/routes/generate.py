@@ -65,18 +65,26 @@ class ImageCharSwapParams(BaseModel):
     steps: int = Field(25, ge=1, le=60)
     cfg: float = Field(7.0, ge=1.0, le=15.0)
     identity_strength: float = Field(
-        0.7, ge=0.0, le=2.0,
+        0.8, ge=0.0, le=2.0,
         description=(
-            "IP-Adapter weight (style-transfer mode). 0.7 default keeps identity while "
-            "letting ControlNet enforce the source pose. Higher values bring in more of "
-            "the reference image including its background/composition."
+            "IP-Adapter weight (style-transfer mode). 0.8 default keeps identity "
+            "without crowding out the pose. Lower if pose still doesn't show; "
+            "higher if face/body doesn't look like the reference."
         ),
     )
     pose_strength: float = Field(
-        1.2, ge=0.0, le=2.0,
+        1.0, ge=0.0, le=2.0,
         description=(
-            "ControlNet OpenPose strength. 1.2 default - we need to push hard against "
-            "IPAdapter's identity transfer."
+            "ControlNet OpenPose strength. 1.0 default (xinsir's recommended max). "
+            "Above 1.0 starts over-constraining: pose lands but anatomy distorts."
+        ),
+    )
+    pose_end_percent: float = Field(
+        0.8, ge=0.0, le=1.0,
+        description=(
+            "Fraction of denoising during which ControlNet is active. 0.8 default "
+            "= enforce pose for the first 80%% of steps, let the model self-correct "
+            "anatomy in the last 20%%. Lower if anatomy still looks broken."
         ),
     )
     seed: int = Field(-1, description="-1 means random")
