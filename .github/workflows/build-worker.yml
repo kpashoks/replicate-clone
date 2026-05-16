@@ -18,6 +18,7 @@ on:
       - 'runpod/Dockerfile'
       - 'runpod/install_custom_nodes.sh'
       - 'runpod/extra_model_paths.yaml'
+      - 'runpod/entrypoint.sh'
       - '.github/workflows/build-worker.yml'
   workflow_dispatch:
 
