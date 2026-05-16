@@ -20,3 +20,11 @@ RUN chmod +x /install_custom_nodes.sh && /install_custom_nodes.sh
 
 # Tell ComfyUI to read model weights from the Network Volume.
 COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
+
+# Wrap the base image's entrypoint so /runpod-volume/output exists at runtime
+# (install_custom_nodes.sh symlinks /comfyui/output -> /runpod-volume/output
+# but the target subdir isn't created at build time since the volume isn't
+# mounted then; without this, ComfyUI's first SaveImage call raises EEXIST).
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
