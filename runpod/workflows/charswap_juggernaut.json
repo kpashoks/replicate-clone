@@ -37,7 +37,7 @@
       "image": ["4", 0],
       "clip_vision": ["3", 0],
       "weight": "__IDENTITY_STRENGTH__",
-      "weight_type": "linear",
+      "weight_type": "style transfer",
       "combine_embeds": "concat",
       "start_at": 0.0,
       "end_at": 1.0,

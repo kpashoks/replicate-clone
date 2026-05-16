@@ -48,8 +48,8 @@ const DEFAULTS: FormParams = {
   negative_prompt: DEFAULT_NEGATIVE,
   steps: 25,
   cfg: 7.0,
-  identity_strength: 1.0,
-  pose_strength: 0.9,
+  identity_strength: 0.7,
+  pose_strength: 1.2,
   seed: -1,
 };
 
@@ -258,8 +258,9 @@ export default function ImageCharSwapPage() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                1.0 = full identity transfer (recommended). Lower = more prompt
-                influence; higher (1.2–1.5) for very stubborn face mismatches.
+                0.7 default (style-transfer mode). Lower = more freedom for ControlNet
+                pose; higher (1.0–1.5) makes the result look more like the reference
+                photo but at the cost of pose adherence.
               </p>
             </div>
 
@@ -273,15 +274,15 @@ export default function ImageCharSwapPage() {
               <Slider
                 value={[params.pose_strength]}
                 min={0}
-                max={1.5}
+                max={2}
                 step={0.05}
                 onValueChange={([v]) =>
                   setParams((p) => ({ ...p, pose_strength: v }))
                 }
               />
               <p className="text-xs text-muted-foreground">
-                0.7 default. Higher locks pose more rigidly; lower lets the
-                model deviate (better proportions when source pose is unusual).
+                1.2 default. Above 1.5 can over-constrain (stiff/uncanny poses);
+                lower if proportions look off.
               </p>
             </div>
 

@@ -65,12 +65,19 @@ class ImageCharSwapParams(BaseModel):
     steps: int = Field(25, ge=1, le=60)
     cfg: float = Field(7.0, ge=1.0, le=15.0)
     identity_strength: float = Field(
-        1.0, ge=0.0, le=2.0,
-        description="IP-Adapter weight. 1.0 = full identity transfer; lower = more prompt influence.",
+        0.7, ge=0.0, le=2.0,
+        description=(
+            "IP-Adapter weight (style-transfer mode). 0.7 default keeps identity while "
+            "letting ControlNet enforce the source pose. Higher values bring in more of "
+            "the reference image including its background/composition."
+        ),
     )
     pose_strength: float = Field(
-        0.9, ge=0.0, le=1.5,
-        description="ControlNet OpenPose strength. 0.9 default (xinsir variant works best at 0.85-1.0).",
+        1.2, ge=0.0, le=2.0,
+        description=(
+            "ControlNet OpenPose strength. 1.2 default - we need to push hard against "
+            "IPAdapter's identity transfer."
+        ),
     )
     seed: int = Field(-1, description="-1 means random")
 
