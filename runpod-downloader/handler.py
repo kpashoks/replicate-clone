@@ -66,15 +66,29 @@ def handler(event: dict) -> dict:
     delete_after = bool(input_data.get("delete_after", False))
 
     if not prefix:
-        return {"error": "Missing required input field 'prefix'", "files": []}
+        return {"files": [], "warning": "Missing required input field 'prefix'"}
 
     if not _safe_prefix(prefix):
-        return {"error": f"Invalid prefix '{prefix}' (path traversal blocked)", "files": []}
+        return {
+            "files": [],
+            "warning": f"Invalid prefix '{prefix}' (path traversal blocked)",
+        }
 
     if not os.path.isdir(OUTPUT_DIR):
+        # Don't use top-level "error" key - RunPod's serverless wrapper strips
+        # that to the response root, hiding it from our backend which only
+        # reads response.output. Surface the diagnostic via the regular output
+        # dict instead.
         return {
-            "error": f"Output directory does not exist: {OUTPUT_DIR}",
             "files": [],
+            "warning": (
+                f"Output directory does not exist yet: {OUTPUT_DIR}. "
+                "This usually means the main worker is still on the OLD image "
+                "(no /comfyui/output -> /runpod-volume/output symlink). "
+                "Terminate cached workers on the main endpoint so the next "
+                "request pulls the latest worker image."
+            ),
+            "output_dir": OUTPUT_DIR,
         }
 
     # Allow ComfyUI's filename suffixing (e.g., "_00001.mp4") and a brief
@@ -88,9 +102,16 @@ def handler(event: dict) -> dict:
         time.sleep(0.3)
 
     if not matches:
+        # List sample directory contents to help diagnose prefix mismatches.
+        try:
+            all_entries = sorted(os.listdir(OUTPUT_DIR))[:30]
+        except OSError as e:
+            all_entries = [f"<listdir failed: {e}>"]
         return {
-            "error": f"No files found matching '{prefix}*' in {OUTPUT_DIR}",
             "files": [],
+            "warning": f"No files matched '{prefix}*' in {OUTPUT_DIR}",
+            "sample_entries": all_entries,
+            "output_dir": OUTPUT_DIR,
         }
 
     files_out: list[dict[str, Any]] = []

@@ -211,14 +211,20 @@ async def run_job(
         dl_out = (dl_resp.get("output") or {}) if isinstance(dl_resp, dict) else {}
         dl_files = dl_out.get("files") or []
         if not dl_files:
+            warning = dl_out.get("warning")
+            sample = dl_out.get("sample_entries")
+            top_error = dl_resp.get("error") if isinstance(dl_resp, dict) else None
+            parts = [f"Downloader returned no files for prefix '{output_prefix}*'."]
+            if warning:
+                parts.append(warning)
+            if top_error and top_error != warning:
+                parts.append(f"runpod error: {top_error}")
+            if sample is not None:
+                parts.append(f"sample entries in dir: {sample}")
             registry.update(
                 job_id,
                 status="failed",
-                error=(
-                    "Downloader returned no files. "
-                    f"Looked for prefix '{output_prefix}*' on the volume. "
-                    f"Response: {json.dumps(dl_out)[:500]}"
-                ),
+                error=" | ".join(parts),
             )
             return
         # Replace the output dict with the downloader's so the unified
