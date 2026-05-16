@@ -31,8 +31,6 @@ const POLL_INTERVAL_MS = 2000;
 type FormParams = {
   prompt: string;
   negative_prompt: string;
-  width: number;
-  height: number;
   steps: number;
   cfg: number;
   identity_strength: number;
@@ -48,12 +46,10 @@ const DEFAULT_NEGATIVE =
 const DEFAULTS: FormParams = {
   prompt: "",
   negative_prompt: DEFAULT_NEGATIVE,
-  width: 1024,
-  height: 1024,
   steps: 25,
   cfg: 7.0,
   identity_strength: 1.0,
-  pose_strength: 0.7,
+  pose_strength: 0.9,
   seed: -1,
 };
 
@@ -289,44 +285,8 @@ export default function ImageCharSwapPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="flex justify-between items-baseline">
-                  <Label>Width</Label>
-                  <span className="text-sm font-mono text-muted-foreground">
-                    {params.width}
-                  </span>
-                </div>
-                <Slider
-                  value={[params.width]}
-                  min={512}
-                  max={2048}
-                  step={64}
-                  onValueChange={([v]) =>
-                    setParams((p) => ({ ...p, width: v }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between items-baseline">
-                  <Label>Height</Label>
-                  <span className="text-sm font-mono text-muted-foreground">
-                    {params.height}
-                  </span>
-                </div>
-                <Slider
-                  value={[params.height]}
-                  min={512}
-                  max={2048}
-                  step={64}
-                  onValueChange={([v]) =>
-                    setParams((p) => ({ ...p, height: v }))
-                  }
-                />
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground -mt-3">
-              For best pose preservation, match the source image's aspect ratio.
+            <p className="text-xs text-muted-foreground">
+              Output dimensions are auto-matched to your source image so the pose skeleton aligns correctly.
             </p>
 
             <div className="grid grid-cols-2 gap-4">

@@ -50,15 +50,18 @@ class ImageEditParams(BaseModel):
 
 
 class ImageCharSwapParams(BaseModel):
-    """SDXL + IP-Adapter + ControlNet OpenPose character replacement in a still image."""
+    """SDXL + IP-Adapter + ControlNet OpenPose character replacement in a still image.
+
+    Output dimensions are derived automatically from the source image (via the
+    workflow's GetImageSize node) so the extracted pose skeleton, the latent,
+    and the output all stay at the same aspect ratio. No width/height knobs.
+    """
     prompt: str = Field(
         "",
         max_length=2000,
         description="Optional scene/style direction. Identity comes from the reference image.",
     )
     negative_prompt: str = Field(_SDXL_DEFAULT_NEGATIVE, max_length=2000)
-    width: int = Field(1024, ge=512, le=2048)
-    height: int = Field(1024, ge=512, le=2048)
     steps: int = Field(25, ge=1, le=60)
     cfg: float = Field(7.0, ge=1.0, le=15.0)
     identity_strength: float = Field(
@@ -66,8 +69,8 @@ class ImageCharSwapParams(BaseModel):
         description="IP-Adapter weight. 1.0 = full identity transfer; lower = more prompt influence.",
     )
     pose_strength: float = Field(
-        0.7, ge=0.0, le=1.5,
-        description="ControlNet OpenPose strength. 0.7 = preserves source pose with some flexibility.",
+        0.9, ge=0.0, le=1.5,
+        description="ControlNet OpenPose strength. 0.9 default (xinsir variant works best at 0.85-1.0).",
     )
     seed: int = Field(-1, description="-1 means random")
 
