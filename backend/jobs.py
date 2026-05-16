@@ -302,6 +302,13 @@ async def run_job(
         saved = storage.write_output(job_id, name, raw)
         output_files.append(saved)
 
+    # When multiple files are returned (e.g., batch outputs or a workflow with
+    # multiple SaveImage nodes), sort by URL so the alphabetically-first
+    # filename appears as the primary output in the UI. Workflows that need a
+    # specific ordering should give their main output a prefix that sorts
+    # before any auxiliary outputs.
+    output_files.sort()
+
     if not output_files:
         # Build a maximally useful diagnostic message.
         diag_parts: list[str] = []
