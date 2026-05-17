@@ -1,0 +1,21 @@
+# Server-side deps not already pulled in by Wan-Video/Wan2.2's requirements.txt.
+# Pinned conservatively - bump only after testing.
+#
+# Note: torch is intentionally NOT pinned here. Wan-Video's own requirements.txt
+# installs torch with a specific CUDA build. Re-specifying it risks an
+# incompatible reinstall.
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.9.2
+python-multipart==0.0.20
+
+# Video I/O - same library skyreels-story uses, well-tested.
+imageio==2.36.1
+imageio-ffmpeg==0.5.1
+
+# Meta's official SAM2. The Replicate logs show they use sam2.sam2_video_predictor
+# with the warning "cannot import name '_C' from 'sam2'" - that's expected when
+# the optional CUDA extensions aren't built. SAM2 falls back to pure-Python
+# post-processing and works fine. We accept the same trade-off.
+git+https://github.com/facebookresearch/sam2.git@main#egg=sam2
