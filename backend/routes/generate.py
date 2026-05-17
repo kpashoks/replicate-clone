@@ -1,4 +1,5 @@
 import secrets
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -91,28 +92,56 @@ class ImageCharSwapParams(BaseModel):
 
 
 class CharacterSwapParams(BaseModel):
-    """Wan 2.2 Animate in Move mode: reference character does the source
-    video's motion in a scene generated from the prompt. The source video's
-    background is NOT preserved - describe the desired scene via the prompt.
+    """Wan 2.2 Animate via the dedicated wan-animate inference server.
 
-    (The Mix-mode replacement variant - which keeps the source background -
-    requires a Wan node variant we can't reliably get working with the core
-    ComfyUI WanAnimateToVideo node. Five rounds of debugging hit a wall; ship
-    Move mode for M4 and revisit later if needed.)
+    Dispatched to a separate HTTP service (NOT the main ComfyUI worker) -
+    see runpod-wan-animate/. That server runs the official Wan-Video Python
+    API plus Meta sam2, matching Replicate's wan-2.2-animate-replace pipeline.
     """
     prompt: str = Field(
         "",
         max_length=2000,
         description=(
-            "Scene description - drives the generated background since the "
-            "source video's scene isn't preserved. E.g. 'a person in an "
-            "industrial gym, dramatic side lighting, cinematic'. Empty prompt "
-            "lets the model improvise."
+            "Optional scene/style context. With replace_flag=True (Mix mode), "
+            "the source video's background is preserved and the prompt only "
+            "guides minor stylistic choices. With replace_flag=False (Move "
+            "mode), the prompt drives the entire generated scene."
         ),
     )
-    steps: int = Field(20, ge=1, le=50)
-    fps: int = Field(16, ge=8, le=30)
-    frames: int = Field(81, ge=17, le=161, description="Number of frames to generate (~5-10 s at 16 fps).")
+    resolution: Literal[
+        "832x480", "1280x720", "1408x640", "480x832", "720x1280"
+    ] = Field(
+        "832x480",
+        description=(
+            "Output dimensions. 832x480 is fastest (~30s). 1280x720 and "
+            "1408x640 are higher quality but slower. 480x832 / 720x1280 are "
+            "vertical (phone) orientation."
+        ),
+    )
+    replace_flag: bool = Field(
+        True,
+        description=(
+            "True = Mix mode (character_mask + background_video; preserves "
+            "the source video's scene). False = Move mode (no mask; character "
+            "performs the source's motion in a freshly-generated scene)."
+        ),
+    )
+    sampling_steps: int = Field(
+        20, ge=1, le=60,
+        description="Diffusion steps per stage. Total compute = 2 * this (dual-stage refinement).",
+    )
+    frame_num: int = Field(
+        81, ge=17, le=161,
+        description="Number of frames to generate (~5-10 s at 16 fps).",
+    )
+    refert_num: int = Field(
+        77, ge=17, le=120,
+        description="Temporal guidance frames per Wan inference chunk.",
+    )
+    guide_scale: float = Field(
+        5.0, ge=1.0, le=15.0,
+        description="Classifier-free guidance strength. 5.0 is the Wan default.",
+    )
     seed: int = Field(-1, description="-1 means random")
 
 
@@ -211,7 +240,7 @@ async def submit_generate(slug: str, req: GenerateRequest) -> GenerateResponse:
 
     job = jobs.registry.create(slug, params)
     jobs.schedule(
-        jobs.run_job(job.id, slug, model.workflow_file, params, req.input_ids),
+        jobs.run_job(job.id, model, params, req.input_ids),
     )
     return GenerateResponse(job_id=job.id, status=job.status)
 

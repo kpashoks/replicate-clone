@@ -25,6 +25,17 @@ class Settings(BaseSettings):
 
     QWEN_MODEL_ID: str = "Qwen/Qwen3-4B-Instruct-2507"
 
+    # HTTP base URL of the wan-animate inference server (the separate
+    # FastAPI server built from runpod-wan-animate/). Leave empty if you
+    # haven't deployed it yet - models with provider="wan-animate-http"
+    # will fail with a clear error.
+    # Example: https://abc123-8000.proxy.runpod.net
+    WAN_ANIMATE_ENDPOINT: str = ""
+    # Max wall-clock seconds to wait for the wan-animate server to finish a
+    # job. ~60s per 81-frame generation in practice, but the first call after
+    # cold start adds another ~60s for model load, so be generous.
+    WAN_ANIMATE_TIMEOUT_SECONDS: int = 600
+
     DATA_DIR: str = "./data"
     FRONTEND_URL: str = "http://localhost:3000"
 
