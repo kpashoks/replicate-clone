@@ -76,46 +76,6 @@
       "clip": ["2", 0]
     }
   },
-  "30": {
-    "class_type": "DownloadAndLoadSAM2Model",
-    "inputs": {
-      "model": "sam2_hiera_base_plus.safetensors",
-      "segmentor": "video",
-      "device": "cuda",
-      "precision": "fp16"
-    }
-  },
-  "31": {
-    "class_type": "StringConstant",
-    "inputs": {
-      "string": "[{\"x\":__SEED_X__,\"y\":80},{\"x\":__SEED_X__,\"y\":160},{\"x\":__SEED_X__,\"y\":240},{\"x\":__SEED_X__,\"y\":320},{\"x\":__SEED_X__,\"y\":400}]"
-    }
-  },
-  "32": {
-    "class_type": "Sam2Segmentation",
-    "inputs": {
-      "sam2_model": ["30", 0],
-      "image": ["20", 0],
-      "keep_model_loaded": false,
-      "individual_objects": false,
-      "coordinates_positive": ["31", 0]
-    }
-  },
-  "33": {
-    "class_type": "GrowMask",
-    "inputs": {
-      "mask": ["32", 0],
-      "expand": 40,
-      "tapered_corners": true
-    }
-  },
-  "34": {
-    "class_type": "BlockifyMask",
-    "inputs": {
-      "masks": ["33", 0],
-      "block_size": 32
-    }
-  },
   "11": {
     "class_type": "WanAnimateToVideo",
     "inputs": {
@@ -130,9 +90,7 @@
       "video_frame_offset": 0,
       "clip_vision_output": null,
       "reference_image": ["5", 0],
-      "pose_video": ["7", 0],
-      "background_video": ["20", 0],
-      "character_mask": ["34", 0]
+      "pose_video": ["7", 0]
     }
   },
   "12": {
@@ -167,27 +125,6 @@
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
-      "save_metadata": false,
-      "pingpong": false,
-      "save_output": true
-    }
-  },
-  "40": {
-    "class_type": "MaskToImage",
-    "inputs": {
-      "mask": ["34", 0]
-    }
-  },
-  "41": {
-    "class_type": "VHS_VideoCombine",
-    "inputs": {
-      "images": ["40", 0],
-      "frame_rate": "__FPS__",
-      "loop_count": 0,
-      "filename_prefix": "__OUTPUT_PREFIX___zzz_debug_mask",
-      "format": "video/h264-mp4",
-      "pix_fmt": "yuv420p",
-      "crf": 23,
       "save_metadata": false,
       "pingpong": false,
       "save_output": true

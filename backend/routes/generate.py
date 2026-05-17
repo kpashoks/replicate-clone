@@ -91,26 +91,28 @@ class ImageCharSwapParams(BaseModel):
 
 
 class CharacterSwapParams(BaseModel):
+    """Wan 2.2 Animate in Move mode: reference character does the source
+    video's motion in a scene generated from the prompt. The source video's
+    background is NOT preserved - describe the desired scene via the prompt.
+
+    (The Mix-mode replacement variant - which keeps the source background -
+    requires a Wan node variant we can't reliably get working with the core
+    ComfyUI WanAnimateToVideo node. Five rounds of debugging hit a wall; ship
+    Move mode for M4 and revisit later if needed.)
+    """
     prompt: str = Field(
         "",
         max_length=2000,
-        description="Optional scene/style context for the swap (Wan focuses on motion + identity from the inputs).",
+        description=(
+            "Scene description - drives the generated background since the "
+            "source video's scene isn't preserved. E.g. 'a person in an "
+            "industrial gym, dramatic side lighting, cinematic'. Empty prompt "
+            "lets the model improvise."
+        ),
     )
     steps: int = Field(20, ge=1, le=50)
     fps: int = Field(16, ge=8, le=30)
     frames: int = Field(81, ge=17, le=161, description="Number of frames to generate (~5-10 s at 16 fps).")
-    # SAM2 seed-X for character segmentation. The workflow plants FIVE
-    # positive seed points along this vertical line in the 832x480 resized
-    # source frame, at y = 80, 160, 240, 320, 400 - covering the full vertical
-    # extent of a typical centered subject. SAM2 segments the smallest region
-    # containing ALL points as a single mask, so multiple points = full-body
-    # mask, single point = single body-part mask. Adjust seed_x if the
-    # character isn't horizontally centered (e.g. 250 for a left-third
-    # subject).
-    seed_x: int = Field(416, ge=0, le=832, description="SAM2 seed point X (0-832).")
-    # seed_y is retained for API back-compat but no longer used by the
-    # workflow (five fixed Y values now). Will be removed in a future cleanup.
-    seed_y: int = Field(240, ge=0, le=480, description="(deprecated, unused)")
     seed: int = Field(-1, description="-1 means random")
 
 
