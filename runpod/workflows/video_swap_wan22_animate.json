@@ -100,18 +100,9 @@
     }
   },
   "31": {
-    "class_type": "PointsEditor",
+    "class_type": "StringConstant",
     "inputs": {
-      "bg_image": ["20", 0],
-      "points_store": "{\"positive\":[{\"x\":__SEED_X__,\"y\":__SEED_Y__}],\"negative\":[{\"x\":0,\"y\":0}]}",
-      "coordinates": "[{\"x\":__SEED_X__,\"y\":__SEED_Y__}]",
-      "neg_coordinates": "[{\"x\":0,\"y\":0}]",
-      "bbox_store": "[{}]",
-      "bboxes": "[{}]",
-      "bbox_format": "xyxy",
-      "width": 832,
-      "height": 480,
-      "normalize": false
+      "string": "[{\"x\":__SEED_X__,\"y\":__SEED_Y__}]"
     }
   },
   "32": {
@@ -190,6 +181,42 @@
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
+      "save_metadata": false,
+      "pingpong": false,
+      "save_output": true
+    }
+  },
+  "40": {
+    "class_type": "MaskToImage",
+    "inputs": {
+      "mask": ["34", 0]
+    }
+  },
+  "41": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["40", 0],
+      "frame_rate": "__FPS__",
+      "loop_count": 0,
+      "filename_prefix": "__OUTPUT_PREFIX___zzz_debug_mask",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 23,
+      "save_metadata": false,
+      "pingpong": false,
+      "save_output": true
+    }
+  },
+  "42": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["7", 0],
+      "frame_rate": "__FPS__",
+      "loop_count": 0,
+      "filename_prefix": "__OUTPUT_PREFIX___zzz_debug_pose",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 23,
       "save_metadata": false,
       "pingpong": false,
       "save_output": true
