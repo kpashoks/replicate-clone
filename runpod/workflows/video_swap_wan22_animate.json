@@ -19,12 +19,6 @@
       "vae_name": "wan_2.1_vae.safetensors"
     }
   },
-  "4": {
-    "class_type": "CLIPVisionLoader",
-    "inputs": {
-      "clip_name": "clip_vision_h.safetensors"
-    }
-  },
   "5": {
     "class_type": "LoadImage",
     "inputs": {
@@ -82,14 +76,6 @@
       "clip": ["2", 0]
     }
   },
-  "10": {
-    "class_type": "CLIPVisionEncode",
-    "inputs": {
-      "clip_vision": ["4", 0],
-      "image": ["5", 0],
-      "crop": "center"
-    }
-  },
   "30": {
     "class_type": "DownloadAndLoadSAM2Model",
     "inputs": {
@@ -142,7 +128,7 @@
       "batch_size": 1,
       "continue_motion_max_frames": 5,
       "video_frame_offset": 0,
-      "clip_vision_output": ["10", 0],
+      "clip_vision_output": null,
       "reference_image": ["5", 0],
       "pose_video": ["7", 0],
       "background_video": ["20", 0],
