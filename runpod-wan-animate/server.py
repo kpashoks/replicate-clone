@@ -424,6 +424,56 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ready", model_loaded=True)
 
 
+@app.get("/debug/info")
+async def debug_info() -> dict:
+    """Lightweight diagnostic endpoint - returns versions + CUDA state
+    without needing terminal access to the container. Hit this when
+    something's wrong and you can't `exec` in.
+    """
+    import platform
+    import sys as _sys
+    info: dict = {
+        "python": platform.python_version(),
+        "python_executable": _sys.executable,
+        "platform": platform.platform(),
+        "model_loaded": _wan_animate is not None,
+        "model_load_error": _model_load_error[:500] if _model_load_error else None,
+    }
+    try:
+        import torch
+        info["torch"] = torch.__version__
+        info["torch_cuda_version"] = torch.version.cuda
+        info["cuda_available"] = torch.cuda.is_available()
+        if torch.cuda.is_available():
+            info["cuda_device_count"] = torch.cuda.device_count()
+            info["cuda_device_name"] = torch.cuda.get_device_name(0)
+    except Exception as e:
+        info["torch_error"] = f"{type(e).__name__}: {e}"
+
+    # Wan-Video repo existence + git revision
+    info["wan_repo_exists"] = WAN_REPO.exists()
+    if WAN_REPO.exists():
+        info["wan_repo_path"] = str(WAN_REPO)
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["git", "-C", str(WAN_REPO), "rev-parse", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            info["wan_repo_commit"] = r.stdout.strip()[:12] if r.returncode == 0 else None
+        except Exception:
+            pass
+
+    # SAM2 import availability
+    try:
+        import sam2
+        info["sam2_path"] = sam2.__file__
+    except ImportError as e:
+        info["sam2_error"] = str(e)
+
+    return info
+
+
 @app.post("/character-swap", response_model=SubmitResponse)
 async def submit_character_swap(
     character_image: UploadFile,

@@ -94,20 +94,40 @@ RUN pip install --no-cache-dir \
         torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
         --index-url https://download.pytorch.org/whl/cu121
 
-# Install Wan-Video's own deps, but strip flash_attn first.
+# Install Wan-Video's own deps, with TWO protections:
 #
-# flash_attn compiles from source by default and requires the CUDA
-# toolkit (nvcc + headers), which lives in the `-devel` base images but
-# NOT in our `-runtime` base. Building from source on a GHA runner also
-# typically exceeds the runner's time/disk budget. We strip it from the
-# install list and accept the perf hit of standard attention - the model
-# still runs, just slower. Production deploys can install a pre-built
-# wheel later (https://github.com/Dao-AILab/flash-attention/releases) if
-# the speed matters.
+# 1. Strip flash_attn (it compiles from source, needs CUDA toolkit which
+#    our -slim base doesn't have - we accept the standard-attention
+#    fallback).
+#
+# 2. Write a pip constraints file that PINS torch to the cu121 build we
+#    just installed. Without this constraint, pip's transitive resolver
+#    sees `accelerate>=1.1.1`, `diffusers>=0.31.0`, etc. (no upper
+#    bounds), resolves them to the latest versions, and those latest
+#    versions' own torch>=X.Y constraint silently UPGRADES our cu121
+#    torch to whatever's the newest cu128 wheel from PyPI - which then
+#    fails at runtime with "NVIDIA driver too old". This was the cause
+#    of the multiple CUDA driver-mismatch errors we kept hitting (12040,
+#    12070, etc.).
+#
+# The constraint file says "if anyone asks pip to install torch, it
+# must be exactly 2.4.1 - don't upgrade". This pins through transitive
+# resolution and makes the install deterministic.
 RUN sed -i -E '/^flash[_-]?attn/d' /opt/wan22/requirements.txt \
     && echo "[Dockerfile] Wan requirements.txt after stripping flash_attn:" \
     && cat /opt/wan22/requirements.txt \
-    && pip install --no-cache-dir -r /opt/wan22/requirements.txt
+    && printf '%s\n' \
+         'torch==2.4.1' \
+         'torchvision==0.19.1' \
+         'torchaudio==2.4.1' \
+         > /tmp/wan-constraints.txt \
+    && echo "[Dockerfile] pip constraints:" \
+    && cat /tmp/wan-constraints.txt \
+    && pip install --no-cache-dir \
+         --constraint /tmp/wan-constraints.txt \
+         -r /opt/wan22/requirements.txt \
+    && echo "[Dockerfile] Verifying torch version after Wan reqs install:" \
+    && python -c "import torch; print('TORCH:', torch.__version__, 'CUDA:', torch.version.cuda)"
 
 # Then our extra runtime deps (FastAPI + Meta's SAM2).
 COPY requirements.txt /tmp/requirements.txt
