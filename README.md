@@ -173,7 +173,7 @@ export HF_TOKEN=hf_xxxxxxxxxx
 export VOLUME_ROOT=/workspace/ComfyUI
 export HF_HUB_CACHE=/workspace/hf_cache
 hf auth login --token "$HF_TOKEN" --add-to-git-credential
-mkdir -p $VOLUME_ROOT/models/{checkpoints,diffusion_models,text_encoders,vae,clip_vision,controlnet,ipadapter,loras,upscale_models}
+mkdir -p $VOLUME_ROOT/models/{checkpoints,diffusion_models,text_encoders,vae,clip_vision,controlnet,ipadapter,sam2,loras,upscale_models}
 mkdir -p /workspace/output
 ```
 
@@ -227,6 +227,13 @@ rm -rf $VOLUME_ROOT/models/ipadapter/sdxl_models
 hf download xinsir/controlnet-openpose-sdxl-1.0 diffusion_pytorch_model.safetensors --local-dir $VOLUME_ROOT/models/controlnet/_tmp_openpose
 mv $VOLUME_ROOT/models/controlnet/_tmp_openpose/diffusion_pytorch_model.safetensors $VOLUME_ROOT/models/controlnet/controlnet-openpose-sdxl-xinsir.safetensors
 rm -rf $VOLUME_ROOT/models/controlnet/_tmp_openpose
+
+# SAM2 base_plus in video-tracking mode (~310 MB).
+# Required by the Wan 2.2 Animate character_mask pipeline — without this,
+# video character swap produces a correct first frame then reverts to the
+# original character because no mask tells the model which region to
+# overwrite. Source: Kijai's pre-converted .safetensors for ComfyUI.
+hf download Kijai/sam2-safetensors sam2_hiera_base_plus.safetensors --local-dir $VOLUME_ROOT/models/sam2
 ```
 
 Verify the final state (~108 GB total):
@@ -235,7 +242,7 @@ Verify the final state (~108 GB total):
 du -sh $VOLUME_ROOT/models/* /workspace/output
 ```
 
-You should see filled `checkpoints/`, `diffusion_models/`, `text_encoders/`, `vae/`, `clip_vision/`, `ipadapter/`, `controlnet/`. **Terminate the temp pod** when done.
+You should see filled `checkpoints/`, `diffusion_models/`, `text_encoders/`, `vae/`, `clip_vision/`, `ipadapter/`, `controlnet/`, `sam2/`. **Terminate the temp pod** when done.
 
 ### 7. Create the main Serverless endpoint
 

@@ -99,6 +99,13 @@ class CharacterSwapParams(BaseModel):
     steps: int = Field(20, ge=1, le=50)
     fps: int = Field(16, ge=8, le=30)
     frames: int = Field(81, ge=17, le=161, description="Number of frames to generate (~5-10 s at 16 fps).")
+    # SAM2 seed point: pixel coordinates in the 832x480 resized source frame
+    # that tell the segmenter "this is the character to track". Default is
+    # center-of-frame, which works whenever the character is roughly centered
+    # in frame 1. Override if your subject is off-center (e.g. (250, 240) for
+    # a left-third subject).
+    seed_x: int = Field(416, ge=0, le=832, description="SAM2 seed point X (0-832).")
+    seed_y: int = Field(240, ge=0, le=480, description="SAM2 seed point Y (0-480).")
     seed: int = Field(-1, description="-1 means random")
 
 

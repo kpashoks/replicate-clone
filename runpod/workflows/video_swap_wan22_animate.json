@@ -44,10 +44,22 @@
       "select_every_nth": 1
     }
   },
+  "20": {
+    "class_type": "ImageResizeKJ",
+    "inputs": {
+      "image": ["6", 0],
+      "width": 832,
+      "height": 480,
+      "upscale_method": "lanczos",
+      "keep_proportion": false,
+      "divisible_by": 16,
+      "crop": "center"
+    }
+  },
   "7": {
     "class_type": "DWPreprocessor",
     "inputs": {
-      "image": ["6", 0],
+      "image": ["20", 0],
       "detect_hand": "enable",
       "detect_body": "enable",
       "detect_face": "enable",
@@ -78,6 +90,55 @@
       "crop": "center"
     }
   },
+  "30": {
+    "class_type": "DownloadAndLoadSAM2Model",
+    "inputs": {
+      "model": "sam2_hiera_base_plus.safetensors",
+      "segmentor": "video",
+      "device": "cuda",
+      "precision": "fp16"
+    }
+  },
+  "31": {
+    "class_type": "PointsEditor",
+    "inputs": {
+      "bg_image": ["20", 0],
+      "points_store": "{\"positive\":[{\"x\":__SEED_X__,\"y\":__SEED_Y__}],\"negative\":[{\"x\":0,\"y\":0}]}",
+      "coordinates": "[{\"x\":__SEED_X__,\"y\":__SEED_Y__}]",
+      "neg_coordinates": "[{\"x\":0,\"y\":0}]",
+      "bbox_store": "[{}]",
+      "bboxes": "[{}]",
+      "bbox_format": "xyxy",
+      "width": 832,
+      "height": 480,
+      "normalize": false
+    }
+  },
+  "32": {
+    "class_type": "Sam2Segmentation",
+    "inputs": {
+      "sam2_model": ["30", 0],
+      "image": ["20", 0],
+      "keep_model_loaded": false,
+      "individual_objects": false,
+      "coordinates_positive": ["31", 0]
+    }
+  },
+  "33": {
+    "class_type": "GrowMask",
+    "inputs": {
+      "mask": ["32", 0],
+      "expand": 20,
+      "tapered_corners": true
+    }
+  },
+  "34": {
+    "class_type": "BlockifyMask",
+    "inputs": {
+      "masks": ["33", 0],
+      "block_size": 32
+    }
+  },
   "11": {
     "class_type": "WanAnimateToVideo",
     "inputs": {
@@ -93,7 +154,8 @@
       "clip_vision_output": ["10", 0],
       "reference_image": ["5", 0],
       "pose_video": ["7", 0],
-      "background_video": ["6", 0]
+      "background_video": ["20", 0],
+      "character_mask": ["34", 0]
     }
   },
   "12": {

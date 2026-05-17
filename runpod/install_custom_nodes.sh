@@ -54,6 +54,16 @@ git clone --depth 1 https://github.com/Fannovel16/comfyui_controlnet_aux.git
 echo "[install_custom_nodes] cloning ComfyUI-GGUF..."
 git clone --depth 1 https://github.com/city96/ComfyUI-GGUF.git
 
+# SAM2 (Segment Anything 2) — produces the character_mask input required for
+# Wan 2.2 Animate's "Mix mode" (character replacement). Without this, the
+# swap reverts to the source character after the first frame because the
+# model has no mask telling it which region to overwrite. Required SAM2
+# weights live on the Network Volume at
+# /runpod-volume/ComfyUI/models/sam2/sam2_hiera_base_plus.safetensors (see
+# bootstrap_volume.sh / README for download instructions).
+echo "[install_custom_nodes] cloning ComfyUI-segment-anything-2..."
+git clone --depth 1 https://github.com/kijai/ComfyUI-segment-anything-2.git
+
 # -----------------------------------------------------------------------------
 # M3.5 - Image Character Swap (Juggernaut + IPAdapter + ControlNet OpenPose)
 # -----------------------------------------------------------------------------
@@ -67,7 +77,7 @@ git clone --depth 1 https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
 # Pip failures are non-fatal so an optional dep doesn't kill the whole build.
 # -----------------------------------------------------------------------------
 
-for d in ComfyUI-KJNodes ComfyUI-VideoHelperSuite comfyui_controlnet_aux ComfyUI-GGUF ComfyUI_IPAdapter_plus; do
+for d in ComfyUI-KJNodes ComfyUI-VideoHelperSuite comfyui_controlnet_aux ComfyUI-GGUF ComfyUI_IPAdapter_plus ComfyUI-segment-anything-2; do
   if [ -f "$CUSTOM_NODES_DIR/$d/requirements.txt" ]; then
     echo "[install_custom_nodes] pip install for $d..."
     pip install --no-cache-dir -r "$CUSTOM_NODES_DIR/$d/requirements.txt" || \

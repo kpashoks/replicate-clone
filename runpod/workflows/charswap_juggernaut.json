@@ -71,7 +71,7 @@
   "8": {
     "class_type": "ControlNetLoader",
     "inputs": {
-      "control_net_name": "controlnet-openpose-sdxl-xinsir.safetensors"
+      "control_net_name": "OpenPoseXL2.safetensors"
     }
   },
   "9": {
