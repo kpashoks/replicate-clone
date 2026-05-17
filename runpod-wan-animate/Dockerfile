@@ -12,7 +12,18 @@
 # preprocessing logic - but using the upstream Wan-Video code path that Replicate
 # is using under the hood.
 
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+# Base: official Python 3.11 image. We used to base on nvidia/cuda but that
+# image's apt python3.11 package is an old pre-release (~3.11.0rc1) that's
+# missing `sys.get_int_max_str_digits` - which PyTorch's _dynamo module calls
+# at import time, crashing with `AttributeError: module 'sys' has no attribute
+# 'get_int_max_str_digits'`.
+#
+# CUDA libraries are provided via torch's cu124 wheel which bundles
+# nvidia-cuda-runtime-cu12, nvidia-cudnn-cu12, etc. as PyPI dependencies.
+# RunPod injects the NVIDIA driver into the container at start time via the
+# nvidia container runtime, regardless of the base image. So a slim Python
+# base is sufficient for GPU work.
+FROM python:3.11-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -20,34 +31,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1
 
 # ---------------------------------------------------------------------------
-# System deps. ffmpeg is needed by imageio for mp4 I/O; git for cloning Wan2.2;
-# build-essential covers a few pip wheels (sam2 has some C extensions but they
-# build optionally - we tolerate failures, just like Replicate does per their
-# log line "cannot import name '_C' from 'sam2'").
-#
-# Python: we explicitly want Python 3.11 throughout. Ubuntu 22.04's system
-# python is 3.10.6, which is missing `sys.get_int_max_str_digits()` (backported
-# in 3.10.7, native in 3.11+). Packages with Rust bindings (tokenizers, etc.)
-# call that during import and crash at runtime if they were installed against
-# 3.11 metadata but loaded under 3.10.
-#
-# To avoid that mess: install python3.11 from apt, do NOT install python3-pip
-# (which gives you Ubuntu's system-python3.10 pip), and bootstrap pip into
-# python3.11 directly via get-pip.py. Then symlink `python`, `python3`, and
-# `pip` so every shell invocation hits the same interpreter.
+# System deps. ffmpeg for mp4 I/O via imageio; git for cloning Wan2.2;
+# build-essential covers a few pip wheels (sam2 has some C extensions but
+# they build optionally - we tolerate failures, just like Replicate does per
+# their log line "cannot import name '_C' from 'sam2'"). libsm6/libxext6/libgl1
+# are runtime deps for opencv-python.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3.11-dev python3.11-venv \
         git wget curl ca-certificates \
         ffmpeg libsm6 libxext6 libgl1 \
         build-essential \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
-    && curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.11 \
-    && python3.11 -m pip install --upgrade pip \
-    && ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip \
-    && ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip3 \
+    && python -m pip install --upgrade pip \
     && echo "Python: $(python --version) | Pip: $(pip --version)"
 
 # App files live at /app, NOT /workspace, because RunPod's default Pod
