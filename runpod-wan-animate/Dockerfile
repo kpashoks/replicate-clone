@@ -24,16 +24,31 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # build-essential covers a few pip wheels (sam2 has some C extensions but they
 # build optionally - we tolerate failures, just like Replicate does per their
 # log line "cannot import name '_C' from 'sam2'").
+#
+# Python: we explicitly want Python 3.11 throughout. Ubuntu 22.04's system
+# python is 3.10.6, which is missing `sys.get_int_max_str_digits()` (backported
+# in 3.10.7, native in 3.11+). Packages with Rust bindings (tokenizers, etc.)
+# call that during import and crash at runtime if they were installed against
+# 3.11 metadata but loaded under 3.10.
+#
+# To avoid that mess: install python3.11 from apt, do NOT install python3-pip
+# (which gives you Ubuntu's system-python3.10 pip), and bootstrap pip into
+# python3.11 directly via get-pip.py. Then symlink `python`, `python3`, and
+# `pip` so every shell invocation hits the same interpreter.
 # ---------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.11 python3.11-dev python3.11-venv python3-pip \
+        python3.11 python3.11-dev python3.11-venv \
         git wget curl ca-certificates \
         ffmpeg libsm6 libxext6 libgl1 \
         build-essential \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
     && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
-    && python -m pip install --upgrade pip
+    && curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.11 \
+    && python3.11 -m pip install --upgrade pip \
+    && ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip \
+    && ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip3 \
+    && echo "Python: $(python --version) | Pip: $(pip --version)"
 
 WORKDIR /workspace
 
