@@ -18,4 +18,10 @@ imageio-ffmpeg==0.5.1
 # with the warning "cannot import name '_C' from 'sam2'" - that's expected when
 # the optional CUDA extensions aren't built. SAM2 falls back to pure-Python
 # post-processing and works fine. We accept the same trade-off.
-git+https://github.com/facebookresearch/sam2.git@main#egg=sam2
+#
+# Naming gotcha: the PyPI/distribution name is "sam-2" (with a hyphen) per
+# the repo's pyproject.toml, even though the Python import is `import sam2`
+# (no hyphen). The PEP 508 direct-URL syntax below specifies the dist name
+# correctly; using `#egg=sam2` would mismatch and pip would reject the
+# install with "inconsistent name: expected 'sam2', but metadata has 'sam-2'".
+sam-2 @ git+https://github.com/facebookresearch/sam2.git@main
