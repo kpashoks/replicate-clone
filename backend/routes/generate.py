@@ -99,13 +99,18 @@ class CharacterSwapParams(BaseModel):
     steps: int = Field(20, ge=1, le=50)
     fps: int = Field(16, ge=8, le=30)
     frames: int = Field(81, ge=17, le=161, description="Number of frames to generate (~5-10 s at 16 fps).")
-    # SAM2 seed point: pixel coordinates in the 832x480 resized source frame
-    # that tell the segmenter "this is the character to track". Default is
-    # center-of-frame, which works whenever the character is roughly centered
-    # in frame 1. Override if your subject is off-center (e.g. (250, 240) for
-    # a left-third subject).
+    # SAM2 seed-X for character segmentation. The workflow plants FIVE
+    # positive seed points along this vertical line in the 832x480 resized
+    # source frame, at y = 80, 160, 240, 320, 400 - covering the full vertical
+    # extent of a typical centered subject. SAM2 segments the smallest region
+    # containing ALL points as a single mask, so multiple points = full-body
+    # mask, single point = single body-part mask. Adjust seed_x if the
+    # character isn't horizontally centered (e.g. 250 for a left-third
+    # subject).
     seed_x: int = Field(416, ge=0, le=832, description="SAM2 seed point X (0-832).")
-    seed_y: int = Field(240, ge=0, le=480, description="SAM2 seed point Y (0-480).")
+    # seed_y is retained for API back-compat but no longer used by the
+    # workflow (five fixed Y values now). Will be removed in a future cleanup.
+    seed_y: int = Field(240, ge=0, le=480, description="(deprecated, unused)")
     seed: int = Field(-1, description="-1 means random")
 
 
