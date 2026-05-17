@@ -50,7 +50,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -sf /usr/local/bin/pip3.11 /usr/local/bin/pip3 \
     && echo "Python: $(python --version) | Pip: $(pip --version)"
 
-WORKDIR /workspace
+# App files live at /app, NOT /workspace, because RunPod's default Pod
+# template mounts the Network Volume at /workspace and would overlay
+# (hide) our files. /app is conventional for application code and
+# RunPod doesn't touch it.
+WORKDIR /app
 
 # ---------------------------------------------------------------------------
 # Clone the official Wan-Video repo at a pinned commit. This is where
@@ -102,12 +106,17 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 ENV PYTHONPATH=/opt/wan22:${PYTHONPATH}
 
 # ---------------------------------------------------------------------------
-# Application files.
+# Application files. Located at /app to keep them outside any volume
+# mount point a host might set up.
 # ---------------------------------------------------------------------------
-COPY server.py /workspace/server.py
-COPY setup_model.py /workspace/setup_model.py
-COPY entrypoint.sh /workspace/entrypoint.sh
-RUN chmod +x /workspace/entrypoint.sh
+COPY server.py /app/server.py
+COPY setup_model.py /app/setup_model.py
+COPY entrypoint.sh /app/entrypoint.sh
+# Normalize line endings in case the file was edited on Windows and
+# committed with CRLF; the shebang `#!/usr/bin/env bash\r` would otherwise
+# cause `exec: bash\r: not found` at container start.
+RUN sed -i 's/\r$//' /app/entrypoint.sh \
+    && chmod +x /app/entrypoint.sh
 
 # ---------------------------------------------------------------------------
 # Runtime config defaults. These are overridable at `docker run` / RunPod
@@ -130,4 +139,4 @@ ENV WAN_CKPT_DIR=/runpod-volume/ComfyUI/models \
 
 EXPOSE 8000
 
-ENTRYPOINT ["/workspace/entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -65,8 +65,8 @@ WAN_REPO = Path(os.environ.get("WAN_REPO", "/opt/wan22"))
 WAN_CKPT_DIR = Path(os.environ.get("WAN_CKPT_DIR", "/runpod-volume/ComfyUI/models"))
 SAM2_CKPT_DIR = Path(os.environ.get("SAM2_CKPT_DIR", "/runpod-volume/ComfyUI/models/sam2"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/runpod-volume/output/wan-animate"))
-TMP_DIR = Path(os.environ.get("TMP_DIR", "/workspace/tmp"))
-JOBS_DIR = Path(os.environ.get("JOBS_DIR", "/workspace/jobs"))
+TMP_DIR = Path(os.environ.get("TMP_DIR", "/app/tmp"))
+JOBS_DIR = Path(os.environ.get("JOBS_DIR", "/app/jobs"))
 
 for d in (OUTPUT_DIR, TMP_DIR, JOBS_DIR):
     d.mkdir(parents=True, exist_ok=True)
