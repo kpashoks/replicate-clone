@@ -28,7 +28,16 @@ FROM python:3.11-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    # NVIDIA container-runtime labels. Required so RunPod's nvidia container
+    # runtime exposes the host GPU into our container. The nvidia/cuda base
+    # images set these automatically; python:3.11-slim doesn't. Without them
+    # torch.cuda.is_available() returns False even on a GPU pod, and the
+    # first call to torch.cuda.current_device() throws:
+    #   RuntimeError: CUDA unknown error ... Setting the available devices
+    #   to be zero.
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # ---------------------------------------------------------------------------
 # System deps. ffmpeg for mp4 I/O via imageio; git for cloning Wan2.2;
