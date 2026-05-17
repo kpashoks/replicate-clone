@@ -73,18 +73,26 @@ RUN git clone --depth 1 --branch ${WAN_REVISION} \
         https://github.com/Wan-Video/Wan2.2.git /opt/wan22 \
     && echo "Pinned Wan-Video commit: $(cd /opt/wan22 && git rev-parse HEAD)"
 
-# Install torch FIRST with an explicit CUDA 12.4 index URL. Wan's
-# requirements.txt says `torch>=2.4.0` without specifying the index,
-# which would pull the CPU-only build from PyPI - fine until something
-# downstream (flash_attn, the actual Wan model) tries to do GPU work and
-# fails with "torch not built with CUDA support".
+# Install torch FIRST with an explicit CUDA 12.1 index URL.
 #
-# Pre-installing satisfies the `torch>=2.4.0` constraint downstream so
-# the subsequent `pip install -r /opt/wan22/requirements.txt` is a no-op
-# for torch.
+# Why cu121 instead of cu124: PyTorch's cu124 wheel for 2.4.1 has a
+# stricter runtime driver check - it needs NVIDIA driver build
+# >= 550.54.15 (reports as CUDA 12.4.1 or 12050). Many RunPod Community
+# Cloud hosts still run driver 550.54.14 (reports 12.4.0 / 12040), and
+# torch refuses to initialize CUDA with the message "The NVIDIA driver
+# on your system is too old (found version 12040)".
+#
+# The cu121 wheel is compiled against CUDA 12.1, requires driver >= 525,
+# and works fine on any host with CUDA 12.x support. Performance loss for
+# inference is <5%.
+#
+# Wan's requirements.txt says `torch>=2.4.0` without specifying the
+# index, which would pull the CPU-only build from PyPI. Pre-installing
+# the CUDA-built wheel satisfies the constraint and the subsequent
+# `pip install -r /opt/wan22/requirements.txt` is a no-op for torch.
 RUN pip install --no-cache-dir \
         torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
-        --index-url https://download.pytorch.org/whl/cu124
+        --index-url https://download.pytorch.org/whl/cu121
 
 # Install Wan-Video's own deps, but strip flash_attn first.
 #
