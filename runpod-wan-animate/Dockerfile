@@ -50,9 +50,33 @@ RUN git clone --depth 1 --branch ${WAN_REVISION} \
         https://github.com/Wan-Video/Wan2.2.git /opt/wan22 \
     && echo "Pinned Wan-Video commit: $(cd /opt/wan22 && git rev-parse HEAD)"
 
-# Install Wan-Video's own deps first (torch, diffusers, transformers, etc.).
-# If any single line fails, we want to know - so no `|| true` here.
-RUN pip install --no-cache-dir -r /opt/wan22/requirements.txt
+# Install torch FIRST with an explicit CUDA 12.4 index URL. Wan's
+# requirements.txt says `torch>=2.4.0` without specifying the index,
+# which would pull the CPU-only build from PyPI - fine until something
+# downstream (flash_attn, the actual Wan model) tries to do GPU work and
+# fails with "torch not built with CUDA support".
+#
+# Pre-installing satisfies the `torch>=2.4.0` constraint downstream so
+# the subsequent `pip install -r /opt/wan22/requirements.txt` is a no-op
+# for torch.
+RUN pip install --no-cache-dir \
+        torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+        --index-url https://download.pytorch.org/whl/cu124
+
+# Install Wan-Video's own deps, but strip flash_attn first.
+#
+# flash_attn compiles from source by default and requires the CUDA
+# toolkit (nvcc + headers), which lives in the `-devel` base images but
+# NOT in our `-runtime` base. Building from source on a GHA runner also
+# typically exceeds the runner's time/disk budget. We strip it from the
+# install list and accept the perf hit of standard attention - the model
+# still runs, just slower. Production deploys can install a pre-built
+# wheel later (https://github.com/Dao-AILab/flash-attention/releases) if
+# the speed matters.
+RUN sed -i -E '/^flash[_-]?attn/d' /opt/wan22/requirements.txt \
+    && echo "[Dockerfile] Wan requirements.txt after stripping flash_attn:" \
+    && cat /opt/wan22/requirements.txt \
+    && pip install --no-cache-dir -r /opt/wan22/requirements.txt
 
 # Then our extra runtime deps (FastAPI + Meta's SAM2).
 COPY requirements.txt /tmp/requirements.txt
