@@ -11,7 +11,12 @@ WORKFLOWS_DIR = REPO_ROOT / "runpod" / "workflows"
 
 # Matches __SOME_KEY__ anywhere inside a string. Used for embedded
 # substitution (e.g. coordinates inside a JSON string literal).
-_EMBEDDED_PLACEHOLDER = re.compile(r"__([A-Z][A-Z0-9_]*)__")
+# Non-greedy on the capture so that patterns like
+# "__OUTPUT_PREFIX___zzz_debug_mask" (triple underscore between the
+# placeholder close and a literal suffix) match OUTPUT_PREFIX rather
+# than greedy-extending into OUTPUT_PREFIX_ and failing the param
+# lookup.
+_EMBEDDED_PLACEHOLDER = re.compile(r"__([A-Z][A-Z0-9_]*?)__")
 
 
 def _substitute(node: Any, params: dict) -> Any:
