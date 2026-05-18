@@ -18,6 +18,7 @@ which provider to invoke based on ModelEntry.provider.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
@@ -25,6 +26,8 @@ from typing import Any, Awaitable, Callable, Optional
 import httpx
 
 from config import settings
+
+log = logging.getLogger(__name__)
 
 
 class WanAnimateError(Exception):
@@ -100,8 +103,12 @@ class WanAnimateClient:
             raise WanAnimateError(f"submit returned no job_id: {body}")
         return str(job_id)
 
-    async def status(self, job_id: str, *, timeout: float = 30.0) -> dict:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+    async def status(self, job_id: str, *, timeout: float = 60.0) -> dict:
+        # Separate the read timeout from the connect timeout - the Pod is
+        # doing heavy GPU work and an event-loop stall under load can briefly
+        # block FastAPI's /jobs/{id} response. Be generous on reads.
+        timeout_cfg = httpx.Timeout(timeout, connect=10.0, read=timeout, write=10.0)
+        async with httpx.AsyncClient(timeout=timeout_cfg) as client:
             r = await client.get(f"{self.base_url}/jobs/{job_id}")
         if r.status_code != 200:
             raise WanAnimateError(
@@ -116,13 +123,56 @@ class WanAnimateClient:
         max_seconds: Optional[int] = None,
         on_status: Optional[Callable[[dict], Awaitable[None] | None]] = None,
     ) -> dict:
-        """Poll until the remote job is completed or failed. Returns final status."""
+        """Poll until the remote job is completed or failed. Returns final status.
+
+        Resilient to transient httpx errors (ReadTimeout, ConnectError,
+        RemoteProtocolError, etc.). Wan inference runs for minutes and the
+        Pod's HTTP server can briefly stall under GPU load -- one network
+        blip should not kill a job that's still progressing on the Pod.
+
+        Polling only gives up when the absolute max_seconds budget is
+        exhausted, OR when consecutive failures exceed an internal threshold.
+        """
         max_seconds = max_seconds or settings.WAN_ANIMATE_TIMEOUT_SECONDS
         start = time.monotonic()
         delay = 2.0
         last: dict = {}
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 10  # ~30-100s of unbroken failure at backoff cap
         while True:
-            last = await self.status(job_id)
+            try:
+                last = await self.status(job_id)
+                consecutive_errors = 0
+            except (
+                httpx.ReadTimeout,
+                httpx.ConnectTimeout,
+                httpx.ConnectError,
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.WriteError,
+                httpx.NetworkError,
+            ) as e:
+                consecutive_errors += 1
+                log.warning(
+                    "wan-animate status poll transient error #%d for job %s: %s: %s",
+                    consecutive_errors, job_id, type(e).__name__, e,
+                )
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    raise WanAnimateError(
+                        f"wan-animate status polling for job {job_id} failed "
+                        f"{consecutive_errors} times in a row "
+                        f"(last error: {type(e).__name__}: {e}). "
+                        f"The Pod may be down -- check /var/log/wan-animate.log."
+                    ) from e
+                if time.monotonic() - start > max_seconds:
+                    raise WanAnimateError(
+                        f"wan-animate job {job_id} timed out after {max_seconds}s "
+                        f"(last error: {type(e).__name__}: {e})"
+                    ) from e
+                await asyncio.sleep(delay)
+                delay = min(delay * 1.5, 10.0)
+                continue
+
             if on_status is not None:
                 res = on_status(last)
                 if asyncio.iscoroutine(res):
