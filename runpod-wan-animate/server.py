@@ -436,9 +436,17 @@ async def _run_job(
             )
 
             # ---- Sampling ----------------------------------------------------
+            # Wan's animate.py asserts refert_num must be exactly 1 or 5 (it's
+            # the number of reference frames overlapped between clips). Clamp
+            # anything else to 5 (their default for multi-clip animation).
+            if refert_num not in (1, 5):
+                log.warning("[%s] refert_num=%d invalid (must be 1 or 5); clamping to 5",
+                            job_id, refert_num)
+                refert_num = 5
+
             await _update_job(job_id, progress_step="sample")
-            log.info("[%s] sampling (seed=%d, steps=%d, frames=%d)",
-                     job_id, actual_seed, sampling_steps, frame_num)
+            log.info("[%s] sampling (seed=%d, steps=%d, frames=%d, refert_num=%d)",
+                     job_id, actual_seed, sampling_steps, frame_num, refert_num)
 
             frames = await asyncio.to_thread(
                 _wan_animate.generate,

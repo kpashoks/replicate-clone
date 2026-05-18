@@ -56,7 +56,7 @@ class WanAnimateClient:
         replace_flag: bool = True,
         sampling_steps: int = 20,
         frame_num: int = 81,
-        refert_num: int = 77,
+        refert_num: int = 5,
         guide_scale: float = 5.0,
         timeout: float = 60.0,
     ) -> str:

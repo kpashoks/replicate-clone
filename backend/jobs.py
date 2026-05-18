@@ -439,7 +439,7 @@ async def _run_wan_animate_http_job(
             replace_flag=params.get("replace_flag", True),
             sampling_steps=params.get("sampling_steps", 20),
             frame_num=params.get("frame_num", 81),
-            refert_num=params.get("refert_num", 77),
+            refert_num=params.get("refert_num", 5),
             guide_scale=params.get("guide_scale", 5.0),
         )
     except WanAnimateError as e:

@@ -134,9 +134,13 @@ class CharacterSwapParams(BaseModel):
         81, ge=17, le=161,
         description="Number of frames to generate (~5-10 s at 16 fps).",
     )
-    refert_num: int = Field(
-        77, ge=17, le=120,
-        description="Temporal guidance frames per Wan inference chunk.",
+    refert_num: Literal[1, 5] = Field(
+        5,
+        description=(
+            "Number of reference frames overlapped between Wan animation "
+            "clips. Wan only accepts 1 or 5 (their codebase asserts this). "
+            "5 = smoother multi-clip transitions; 1 = each clip independent."
+        ),
     )
     guide_scale: float = Field(
         5.0, ge=1.0, le=15.0,
