@@ -113,9 +113,20 @@ def _patch_wan_flash_attention_to_sdpa() -> None:
     submodule that does `from ..attention import flash_attention` is imported
     (clip.py, model.py, etc. bind the name at import time).
     """
+    import sys as _sys
     import torch
     import torch.nn.functional as F
     import wan.modules.attention as _wa  # type: ignore
+
+    # IMPORTANT: importing wan.modules.attention may eagerly trigger
+    # wan/__init__.py, which in turn imports WanAnimate -> animate.py ->
+    # clip.py. clip.py does `from ..attention import flash_attention` at
+    # module load time, which binds clip.py's local `flash_attention` name
+    # to the ORIGINAL function object. Just setting
+    # _wa.flash_attention = shim is therefore not enough -- we must also
+    # sweep every loaded wan.* submodule and rebind any name still pointing
+    # to the old function.
+    _orig_flash_attention = _wa.flash_attention
 
     def _sdpa_shim(
         q,
@@ -202,10 +213,33 @@ def _patch_wan_flash_attention_to_sdpa() -> None:
     # Pretend FA2 is available so the `assert FLASH_ATTN_2_AVAILABLE` in
     # Wan's wrapper passes (it will then route to our shim).
     _wa.FLASH_ATTN_2_AVAILABLE = True
-    # Leave FA3 flag alone (False) — Wan's logic prefers FA3 only when
+    # Leave FA3 flag alone (False) -- Wan's logic prefers FA3 only when
     # version=3 is explicitly requested; clip.py calls with version=2.
 
-    log.info("Patched wan.modules.attention.flash_attention -> torch SDPA")
+    # Sweep all loaded wan.* submodules and rebind any reference to the
+    # original flash_attention function (e.g. clip.py binds it via
+    # `from ..attention import flash_attention`).
+    rebound = 0
+    for mod_name, mod in list(_sys.modules.items()):
+        if not mod_name.startswith("wan"):
+            continue
+        if mod is None or mod is _wa:
+            continue
+        try:
+            mod_vars = vars(mod)
+        except TypeError:
+            continue
+        for attr_name, attr_val in list(mod_vars.items()):
+            if attr_val is _orig_flash_attention:
+                setattr(mod, attr_name, _sdpa_shim)
+                rebound += 1
+                log.info("  rebound %s.%s -> SDPA shim", mod_name, attr_name)
+
+    log.info(
+        "Patched wan.modules.attention.flash_attention -> torch SDPA "
+        "(also rebound %d existing references in loaded wan.* submodules)",
+        rebound,
+    )
 
 
 # --- logging --------------------------------------------------------------
