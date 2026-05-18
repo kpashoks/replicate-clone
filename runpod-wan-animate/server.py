@@ -271,7 +271,52 @@ def _load_model() -> None:
                 "Falling back to %s for preprocessing pipeline (verify it's right)",
                 ProcessClass.__name__,
             )
-        _preprocess_pipeline = ProcessClass()
+
+        # ProcessPipeline requires 4 explicit checkpoint paths. Layout
+        # matches Wan-Video's own preprocess_data.py CLI script:
+        #
+        #     <ckpt_path>/det/yolov10m.onnx
+        #     <ckpt_path>/pose2d/vitpose_h_wholebody.onnx
+        #     <ckpt_path>/sam2/sam2_hiera_large.pt      (only when replace_flag=True)
+        #     <ckpt_path>/FLUX.1-Kontext-dev/           (only when use_flux=True)
+        #
+        # where args.ckpt_path == /workspace/Wan2.2-Animate-14B/process_checkpoint/
+        # (different from the main WAN_CKPT_DIR which holds the DiT+T5+CLIP+VAE).
+        preprocess_ckpt_dir = WAN_CKPT_DIR / "process_checkpoint"
+        det_checkpoint_path = preprocess_ckpt_dir / "det" / "yolov10m.onnx"
+        pose2d_checkpoint_path = preprocess_ckpt_dir / "pose2d" / "vitpose_h_wholebody.onnx"
+        sam_checkpoint_path = preprocess_ckpt_dir / "sam2" / "sam2_hiera_large.pt"
+        flux_kontext_path = None  # not needed (use_flux=False)
+
+        # Fail loudly with a clear list if any required path is missing
+        missing = [
+            f"  {label}={path}"
+            for label, path in [
+                ("det_checkpoint_path", det_checkpoint_path),
+                ("pose2d_checkpoint_path", pose2d_checkpoint_path),
+                ("sam_checkpoint_path", sam_checkpoint_path),
+            ]
+            if not path.exists()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "Missing preprocess checkpoint(s):\n"
+                + "\n".join(missing)
+                + f"\nExpected base dir: {preprocess_ckpt_dir}"
+            )
+
+        log.info("Constructing ProcessPipeline with:")
+        log.info("  det_checkpoint_path    = %s", det_checkpoint_path)
+        log.info("  pose2d_checkpoint_path = %s", pose2d_checkpoint_path)
+        log.info("  sam_checkpoint_path    = %s", sam_checkpoint_path)
+        log.info("  flux_kontext_path      = %s", flux_kontext_path)
+
+        _preprocess_pipeline = ProcessClass(
+            det_checkpoint_path=str(det_checkpoint_path),
+            pose2d_checkpoint_path=str(pose2d_checkpoint_path),
+            sam_checkpoint_path=str(sam_checkpoint_path),
+            flux_kontext_path=flux_kontext_path,
+        )
         log.info("Preprocessing pipeline (%s) loaded.", ProcessClass.__name__)
 
     except Exception as e:
