@@ -91,6 +91,123 @@ def _patch_safetensors_cpu_only() -> None:
 _patch_safetensors_cpu_only()
 
 
+# --- flash_attn -> torch SDPA fallback ------------------------------------
+#
+# Wan's CLIP visual encoder (wan/modules/animate/clip.py) hardcodes
+# `flash_attention(..., version=2)` and the wrapper in wan/modules/attention.py
+# asserts `FLASH_ATTN_2_AVAILABLE`. flash-attn doesn't have prebuilt wheels
+# for torch 2.8 + py3.12 + cu128 (Blackwell), so we monkey-patch the call site
+# to use torch.nn.functional.scaled_dot_product_attention instead.
+#
+# Wan's flash_attention signature:
+#   def flash_attention(q, k, v, q_lens=None, k_lens=None, dropout_p=0.,
+#                       softmax_scale=None, q_scale=None, causal=False,
+#                       window_size=(-1,-1), deterministic=False,
+#                       dtype=torch.bfloat16, version=None)
+# Shapes: q [B, Lq, Nq, C], k [B, Lk, Nk, C], v [B, Lk, Nk, C2] -> out [B, Lq, Nq, C2]
+# SDPA wants [B, N, L, C], so we transpose in/out. GQA supported via repeat.
+def _patch_wan_flash_attention_to_sdpa() -> None:
+    """Replace wan.modules.attention.flash_attention with an SDPA shim.
+
+    Must be called AFTER sys.path includes WAN_REPO but BEFORE any wan
+    submodule that does `from ..attention import flash_attention` is imported
+    (clip.py, model.py, etc. bind the name at import time).
+    """
+    import torch
+    import torch.nn.functional as F
+    import wan.modules.attention as _wa  # type: ignore
+
+    def _sdpa_shim(
+        q,
+        k,
+        v,
+        q_lens=None,
+        k_lens=None,
+        dropout_p=0.0,
+        softmax_scale=None,
+        q_scale=None,
+        causal=False,
+        window_size=(-1, -1),
+        deterministic=False,
+        dtype=torch.bfloat16,
+        version=None,
+    ):
+        # q: [B, Lq, Nq, C], k/v: [B, Lk, Nk, C(2)]
+        out_dtype = q.dtype
+
+        # GQA: replicate K/V heads to match Q heads.
+        Nq = q.shape[2]
+        Nk = k.shape[2]
+        if Nq != Nk:
+            assert Nq % Nk == 0, f"Nq={Nq} must be divisible by Nk={Nk}"
+            rep = Nq // Nk
+            k = k.repeat_interleave(rep, dim=2)
+            v = v.repeat_interleave(rep, dim=2)
+
+        # Optional pre-softmax Q scaling (Wan-specific).
+        if q_scale is not None:
+            q = q * q_scale
+
+        # Transpose to SDPA layout: [B, N, L, C].
+        q_ = q.transpose(1, 2)
+        k_ = k.transpose(1, 2)
+        v_ = v.transpose(1, 2)
+
+        # Cast to half/bf16 for compute parity with FA (their assert chains
+        # this dtype too). Skip if already half.
+        compute_dtype = dtype if dtype in (torch.float16, torch.bfloat16) else torch.bfloat16
+        if q_.dtype not in (torch.float16, torch.bfloat16):
+            q_ = q_.to(compute_dtype)
+            k_ = k_.to(compute_dtype)
+            v_ = v_.to(compute_dtype)
+
+        # Build padding mask if variable-length sequences are supplied.
+        attn_mask = None
+        if q_lens is not None or k_lens is not None:
+            B, _, Lq, _ = q_.shape
+            Lk = k_.shape[2]
+            device = q_.device
+            if k_lens is not None:
+                key_mask = (
+                    torch.arange(Lk, device=device).unsqueeze(0)
+                    < k_lens.to(device).unsqueeze(1)
+                )  # [B, Lk] True=keep
+                attn_mask = key_mask[:, None, None, :].expand(B, 1, Lq, Lk)
+                attn_mask = attn_mask.to(dtype=torch.bool)
+
+        # SDPA can't combine is_causal with an explicit attn_mask, so when
+        # both are set we fold causality into the mask.
+        if causal and attn_mask is not None:
+            B, _, Lq, Lk = attn_mask.shape
+            causal_mask = torch.tril(
+                torch.ones(Lq, Lk, dtype=torch.bool, device=attn_mask.device)
+            )
+            attn_mask = attn_mask & causal_mask
+            is_causal = False
+        else:
+            is_causal = bool(causal)
+
+        out = F.scaled_dot_product_attention(
+            q_, k_, v_,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+            scale=softmax_scale,
+        )
+        # Back to [B, L, N, C2] and restore original dtype.
+        out = out.transpose(1, 2).contiguous().to(out_dtype)
+        return out
+
+    _wa.flash_attention = _sdpa_shim
+    # Pretend FA2 is available so the `assert FLASH_ATTN_2_AVAILABLE` in
+    # Wan's wrapper passes (it will then route to our shim).
+    _wa.FLASH_ATTN_2_AVAILABLE = True
+    # Leave FA3 flag alone (False) — Wan's logic prefers FA3 only when
+    # version=3 is explicitly requested; clip.py calls with version=2.
+
+    log.info("Patched wan.modules.attention.flash_attention -> torch SDPA")
+
+
 # --- logging --------------------------------------------------------------
 
 logging.basicConfig(
@@ -214,6 +331,12 @@ def _load_model() -> None:
 
     try:
         log.info("Loading Wan 2.2 Animate ...")
+
+        # Replace flash_attention with an SDPA fallback BEFORE importing
+        # anything from `wan` that binds the name at import time (e.g. clip.py
+        # does `from ..attention import flash_attention`).
+        _patch_wan_flash_attention_to_sdpa()
+
         # Wan-Video's own config + WanAnimate class.
         # The config object resolves which checkpoint files to load.
         from wan.configs import WAN_CONFIGS  # type: ignore
