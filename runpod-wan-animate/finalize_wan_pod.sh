@@ -71,7 +71,8 @@ pip install --no-cache-dir --quiet \
     'decord' 'moviepy' 'librosa' 'soundfile' 'scipy' \
     'matplotlib' 'pandas' 'scikit-image' 'av' \
     'protobuf' 'sentencepiece' \
-    'peft' 'loguru'
+    'peft' 'loguru' \
+    'onnxruntime-gpu'
 
 # Optional - dashscope (Alibaba SDK) can fail; not critical
 pip install --no-cache-dir --quiet dashscope 2>/dev/null || warn "dashscope skipped"
