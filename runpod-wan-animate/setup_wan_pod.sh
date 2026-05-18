@@ -136,7 +136,8 @@ pip install --no-cache-dir --quiet \
     'huggingface_hub>=0.30,<1.0' \
     'numpy<2' \
     'pyyaml>=6' 'regex' 'requests>=2.31' 'Pillow>=10' \
-    'filelock' 'psutil' 'packaging'
+    'filelock' 'psutil' 'packaging' \
+    'einops' 'omegaconf'
 log "  Done."
 log ""
 
