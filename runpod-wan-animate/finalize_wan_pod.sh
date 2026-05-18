@@ -36,6 +36,33 @@ err()  { echo -e "${RED}[finalize]${RESET} $*"; }
 TORCH_BEFORE=$(python3 -c "import torch; print(torch.__version__)")
 log "Torch BEFORE install: ${TORCH_BEFORE}"
 
+# Sanity check the Wan-AI weights are on the volume (these are the OFFICIAL
+# layout from Wan-AI/Wan2.2-Animate-14B - not the older ComfyUI-repackaged
+# files which we deleted). If absent, fail loudly so the user knows to
+# re-run `hf download Wan-AI/Wan2.2-Animate-14B --local-dir
+# /workspace/Wan2.2-Animate-14B`.
+log "Checking Wan-AI weights at /workspace/Wan2.2-Animate-14B/..."
+WAN_AI_FILES=(
+    "/workspace/Wan2.2-Animate-14B/models_t5_umt5-xxl-enc-bf16.pth"
+    "/workspace/Wan2.2-Animate-14B/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"
+    "/workspace/Wan2.2-Animate-14B/Wan2.1_VAE.pth"
+    "/workspace/Wan2.2-Animate-14B/process_checkpoint/det/yolov10m.onnx"
+    "/workspace/Wan2.2-Animate-14B/process_checkpoint/sam2/sam2_hiera_large.pt"
+)
+missing_wanai=0
+for f in "${WAN_AI_FILES[@]}"; do
+    if [ -f "$f" ] || [ -d "$f" ]; then
+        log "  OK: $f"
+    else
+        warn "  MISSING: $f"
+        missing_wanai=$((missing_wanai + 1))
+    fi
+done
+if [ "$missing_wanai" -gt 0 ]; then
+    warn "${missing_wanai} Wan-AI file(s) missing. Server will fail at first inference until you run:"
+    warn "  hf download Wan-AI/Wan2.2-Animate-14B --local-dir /workspace/Wan2.2-Animate-14B"
+fi
+
 # ============================================================================
 # 1. Install every dep we know Wan-Video, SAM2, transformers, or
 #    diffusers might import. Pure-Python and pre-built wheels only -
@@ -183,9 +210,13 @@ log "Writing start.sh..."
 cat > /opt/wan-animate/start.sh <<'SCRIPT'
 #!/usr/bin/env bash
 set -e
+# Wan-Video's inference code expects the official Wan-AI weight layout
+# (the OFFICIAL Hugging Face repo Wan-AI/Wan2.2-Animate-14B layout, NOT
+# ComfyUI-repackaged). Point WAN_CKPT_DIR at the dir where you ran
+# `hf download Wan-AI/Wan2.2-Animate-14B`.
 export WAN_REPO=/opt/wan22
-export WAN_CKPT_DIR=/workspace/ComfyUI/models
-export SAM2_CKPT_DIR=/workspace/ComfyUI/models/sam2
+export WAN_CKPT_DIR=/workspace/Wan2.2-Animate-14B
+export SAM2_CKPT_DIR=/workspace/Wan2.2-Animate-14B/process_checkpoint/sam2
 export OUTPUT_DIR=/workspace/output/wan-animate
 export TMP_DIR=/tmp/wan-animate-tmp
 export JOBS_DIR=/tmp/wan-animate-jobs
