@@ -710,16 +710,44 @@ async def _run_job(
             await _update_job(job_id, progress_step="encode")
             output_path = OUTPUT_DIR / f"{job_id}.mp4"
 
-            # `frames` is expected to be a uint8 ndarray of shape (T, H, W, 3)
-            # or a torch tensor. Normalize to ndarray for imageio.
+            # Wan's WanAnimate.generate returns video tensors in (C, T, H, W)
+            # layout, float values in approximately [-1, 1] (some configs use
+            # [0, 1]). imageio.mimwrite wants a list of (H, W, C) uint8 arrays
+            # with C in {1, 2, 3, 4}.
             if hasattr(frames, "cpu"):
                 frames = frames.cpu().numpy()
+
+            log.info("[%s] raw frames shape=%s dtype=%s min=%.3f max=%.3f",
+                     job_id, frames.shape, frames.dtype,
+                     float(frames.min()), float(frames.max()))
+
+            # Normalize layout to (T, H, W, C).
+            if frames.ndim == 4:
+                d0, d1, d2, d3 = frames.shape
+                if d0 == 3 and d3 != 3:
+                    # (C=3, T, H, W) -> (T, H, W, C)
+                    frames = np.transpose(frames, (1, 2, 3, 0))
+                elif d1 == 3 and d3 != 3:
+                    # (T, C=3, H, W) -> (T, H, W, C)
+                    frames = np.transpose(frames, (0, 2, 3, 1))
+                # else: already (T, H, W, C); leave alone
+            else:
+                raise ValueError(
+                    f"Unexpected Wan output shape {frames.shape}; "
+                    f"expected 4D tensor."
+                )
+
+            # Normalize value range to uint8 [0, 255].
             if frames.dtype != np.uint8:
-                # Wan returns [0..1] floats; rescale.
+                mn, mx = float(frames.min()), float(frames.max())
+                if mn < -0.01:
+                    # Looks like [-1, 1]; rescale.
+                    frames = (np.clip(frames, -1.0, 1.0) + 1.0) * 0.5
+                # Now in [0, 1] (or close).
                 frames = (np.clip(frames, 0.0, 1.0) * 255).astype(np.uint8)
 
-            log.info("[%s] encoding %d frames -> %s",
-                     job_id, len(frames), output_path)
+            log.info("[%s] encoding %d frames %s -> %s",
+                     job_id, len(frames), frames.shape, output_path)
             await asyncio.to_thread(
                 imageio.mimwrite,
                 str(output_path),
