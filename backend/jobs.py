@@ -100,9 +100,10 @@ def _input_names_for_slug(slug: str, input_ids: list[str]) -> list[str]:
 
 
 # Per-slug max poll duration (seconds). Video jobs need more headroom.
-_MAX_POLL_SECONDS: dict[str, int] = {
-    "character-swap": 1500,  # 25 min for video generation
-}
+# Empty by default - WAN_ANIMATE_TIMEOUT_SECONDS in config.py (default 5400s
+# = 90 min) covers character-swap. Add slug-specific overrides here only if
+# a model genuinely needs a budget different from the global default.
+_MAX_POLL_SECONDS: dict[str, int] = {}
 
 
 # Keep strong references to fire-and-forget tasks so they aren't GC'd mid-run.

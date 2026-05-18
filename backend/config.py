@@ -32,9 +32,14 @@ class Settings(BaseSettings):
     # Example: https://abc123-8000.proxy.runpod.net
     WAN_ANIMATE_ENDPOINT: str = ""
     # Max wall-clock seconds to wait for the wan-animate server to finish a
-    # job. ~60s per 81-frame generation in practice, but the first call after
-    # cold start adds another ~60s for model load, so be generous.
-    WAN_ANIMATE_TIMEOUT_SECONDS: int = 600
+    # job. Wan 2.2 Animate runs ~25s per diffusion step on Blackwell, plus
+    # ~3 min model load on cold start. Observed budgets on a Blackwell GPU:
+    #   2 s  clip (81 frames) : ~12 min end-to-end
+    #   5 s  clip              : ~25 min
+    #   10 s clip              : ~50 min
+    #   15 s clip              : ~75 min
+    # Default to 90 min so 10-15s clips don't trip the cap. Override via env.
+    WAN_ANIMATE_TIMEOUT_SECONDS: int = 5400
 
     DATA_DIR: str = "./data"
     FRONTEND_URL: str = "http://localhost:3000"
