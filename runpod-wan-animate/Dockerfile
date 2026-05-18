@@ -116,18 +116,39 @@ RUN pip install --no-cache-dir \
 RUN sed -i -E '/^flash[_-]?attn/d' /opt/wan22/requirements.txt \
     && echo "[Dockerfile] Wan requirements.txt after stripping flash_attn:" \
     && cat /opt/wan22/requirements.txt \
-    && printf '%s\n' \
-         'torch==2.4.1' \
-         'torchvision==0.19.1' \
-         'torchaudio==2.4.1' \
-         > /tmp/wan-constraints.txt \
-    && echo "[Dockerfile] pip constraints:" \
-    && cat /tmp/wan-constraints.txt \
-    && pip install --no-cache-dir \
-         --constraint /tmp/wan-constraints.txt \
-         -r /opt/wan22/requirements.txt \
-    && echo "[Dockerfile] Verifying torch version after Wan reqs install:" \
-    && python -c "import torch; print('TORCH:', torch.__version__, 'CUDA:', torch.version.cuda)"
+    && pip install --no-cache-dir -r /opt/wan22/requirements.txt \
+    && echo "[Dockerfile] Torch version after Wan reqs install (may have been upgraded):" \
+    && python -c "import torch; print('  TORCH:', torch.__version__, 'CUDA:', torch.version.cuda)"
+
+# CRITICAL: force-reinstall torch back to cu121 AFTER Wan reqs.
+#
+# Pip's transitive resolver - even with a --constraint file - will silently
+# upgrade torch from our pinned 2.4.1+cu121 to whatever latest cu130 wheel
+# satisfies Wan's unbounded `accelerate>=1.1.1` etc. (verified by hitting
+# /debug/info on a built Pod and seeing torch=2.12.0+cu130 instead of
+# 2.4.1+cu121). That cu130 wheel needs a driver supporting CUDA 13.0, which
+# no current RunPod host has.
+#
+# Strategy: let Wan's reqs upgrade torch however they want (they'll install
+# transformers, diffusers, accelerate, etc. correctly), then nuke torch and
+# reinstall our cu121 pin. --no-deps tells pip not to touch the other packages
+# that are already in place. --force-reinstall pulls the wheel even though
+# pip thinks "torch is installed."
+#
+# Trade-off: transformers/diffusers/accelerate stay at their latest versions
+# (which expect torch>=2.6 or so per their setup.py), but Wan-Video's own
+# code only uses torch 2.4+ APIs. Some non-essential features in newer
+# transformers/diffusers may emit warnings or fall back, but the inference
+# code path works.
+#
+# If this still doesn't hold and the build's verification step at the bottom
+# fails, we pin transformers/diffusers/accelerate to torch-2.4-compatible
+# versions in the Wan reqs.
+RUN pip install --no-cache-dir --force-reinstall --no-deps \
+        torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+        --index-url https://download.pytorch.org/whl/cu121 \
+    && echo "[Dockerfile] Torch version AFTER forced cu121 reinstall:" \
+    && python -c "import torch, sys; v=torch.__version__; print('  TORCH:', v, 'CUDA:', torch.version.cuda); assert '+cu121' in v, f'EXPECTED cu121, GOT {v}'; print('  OK')"
 
 # Then our extra runtime deps (FastAPI + Meta's SAM2).
 COPY requirements.txt /tmp/requirements.txt
