@@ -144,11 +144,15 @@ log "Installing Wan-Video model deps (pinned versions, no torch upgrade)..."
 # Versions chosen at the MINIMUM end of what Wan accepts. These are the
 # versions Wan tested against and which don't pull a transitive torch
 # upgrade. Using --no-deps as belt-and-suspenders.
+#
+# tokenizers: transformers 4.51.3 requires tokenizers>=0.21,<0.22 (NOT
+# the older 0.20.3 we tried previously). We install tokenizers in the
+# correct range; the package has no torch dependency so no upgrade risk.
 pip install --no-cache-dir --no-deps --quiet \
     'diffusers==0.31.0' \
     'transformers==4.51.3' \
     'accelerate==1.1.1' \
-    'tokenizers==0.20.3'
+    'tokenizers>=0.21,<0.22'
 log "  Done."
 log ""
 
@@ -161,6 +165,11 @@ SAM2_COMMIT=2b90b9f5ceec907a1c18123530e92e794ad901a4
 pip install --no-cache-dir --no-deps --quiet \
     "sam-2 @ git+https://github.com/facebookresearch/sam2.git@${SAM2_COMMIT}" \
     || warn "SAM2 install failed - inference will fail unless this is resolved"
+
+# SAM2's --no-deps install skips hydra-core + iopath which it imports at
+# runtime. Both are pure-Python with no torch dep - safe to install with
+# normal resolution.
+pip install --no-cache-dir --quiet hydra-core iopath
 log "  Done."
 log ""
 
