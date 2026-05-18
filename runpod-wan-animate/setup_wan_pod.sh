@@ -138,7 +138,8 @@ pip install --no-cache-dir --quiet \
     'pyyaml>=6' 'regex' 'requests>=2.31' 'Pillow>=10' \
     'filelock' 'psutil' 'packaging' \
     'einops' 'omegaconf' \
-    'decord' 'moviepy' 'librosa' 'soundfile' 'scipy'
+    'decord' 'moviepy' 'librosa' 'soundfile' 'scipy' \
+    'peft'
 log "  Done."
 log ""
 
