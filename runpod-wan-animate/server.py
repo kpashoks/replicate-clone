@@ -235,6 +235,16 @@ def _load_model() -> None:
         log.info("Wan 2.2 Animate loaded.")
 
         log.info("Loading Wan-Video preprocessing pipeline ...")
+
+        # The preprocess module uses BARE imports for its sibling files
+        # (`from pose2d import Pose2d`, `from utils import ...`, etc.)
+        # instead of relative imports. That only works if the preprocess
+        # directory itself is on sys.path. Add it before importing.
+        preprocess_dir = WAN_REPO / "wan" / "modules" / "animate" / "preprocess"
+        if str(preprocess_dir) not in sys.path:
+            sys.path.insert(0, str(preprocess_dir))
+            log.info("  Added %s to sys.path", preprocess_dir)
+
         # Try the most likely class names. Fall back to introspection if
         # neither works.
         from wan.modules.animate.preprocess import process_pipepline as pp  # type: ignore
