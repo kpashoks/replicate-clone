@@ -51,6 +51,46 @@ from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image
 from pydantic import BaseModel, Field
 
+
+# --- safetensors CUDA workaround ------------------------------------------
+#
+# safetensors_rust throws "device cuda:0 is invalid" when loading large
+# shards over MooseFS/NFS-mounted Network Volumes - even though direct
+# cuda loads of small local files work fine. accelerate.load_state_dict
+# triggers this when device_map specifies a cuda device for the DiT
+# shards in /workspace/Wan2.2-Animate-14B/.
+#
+# Workaround: force safetensors to always load to CPU. accelerate's
+# load_checkpoint_and_dispatch flow handles the subsequent GPU placement
+# separately. Slightly slower (CPU -> GPU transfer adds ~10s) but
+# bypasses the bug entirely.
+#
+# This must be applied BEFORE any code imports accelerate, because
+# accelerate caches a local reference: `from safetensors.torch import
+# load_file as safe_load_file`. We patch both the source module's
+# function AND accelerate's cached alias defensively.
+def _patch_safetensors_cpu_only() -> None:
+    import safetensors.torch  # type: ignore
+    _orig_load_file = safetensors.torch.load_file
+
+    def _patched_load_file(filename, device="cpu"):
+        # Always load to CPU - ignore the requested device.
+        return _orig_load_file(filename, device="cpu")
+
+    safetensors.torch.load_file = _patched_load_file
+
+    # If accelerate has already been imported (unlikely at module load
+    # time but defensive), patch its cached reference too.
+    try:
+        import accelerate.utils.modeling as _accel_mod  # type: ignore
+        _accel_mod.safe_load_file = _patched_load_file
+    except ImportError:
+        pass
+
+
+_patch_safetensors_cpu_only()
+
+
 # --- logging --------------------------------------------------------------
 
 logging.basicConfig(
