@@ -117,7 +117,11 @@ log ""
 #    the pre-installed torch. This is the part that the Docker approach
 #    kept getting wrong (pip kept upgrading torch transitively).
 # ============================================================================
-log "Installing FastAPI server deps..."
+log "Installing FastAPI server deps + common Python libs..."
+# These have no torch dependency, safe to install with deps. We install
+# common transitive deps (pyyaml, regex, requests, Pillow) explicitly so
+# the later --no-deps installs of diffusers/transformers/accelerate don't
+# fail at import time looking for them.
 pip install --no-cache-dir --quiet \
     'fastapi>=0.115' \
     'uvicorn[standard]>=0.32' \
@@ -130,7 +134,9 @@ pip install --no-cache-dir --quiet \
     'easydict' 'ftfy' 'tqdm' \
     'safetensors>=0.4.5' \
     'huggingface_hub>=0.26' \
-    'numpy<2'
+    'numpy<2' \
+    'pyyaml>=6' 'regex' 'requests>=2.31' 'Pillow>=10' \
+    'filelock' 'psutil' 'packaging'
 log "  Done."
 log ""
 
@@ -267,6 +273,40 @@ chmod +x /opt/wan-animate/start.sh
 log "  /opt/wan-animate/start.sh installed (executable)."
 log ""
 
+# Write update_server.sh — pulls a fresh server.py from main and restarts
+# uvicorn. Use this when iterating on server.py without re-running the
+# full setup.
+log "Writing /opt/wan-animate/update_server.sh..."
+cat > /opt/wan-animate/update_server.sh <<'SCRIPT'
+#!/usr/bin/env bash
+# Pull a fresh server.py from this repo's main branch and restart uvicorn.
+# Useful for fast iteration during debugging - no need to re-run the
+# whole setup script.
+
+set -e
+
+echo "[update] Fetching latest server.py from GitHub..."
+curl -fsSL \
+    "https://raw.githubusercontent.com/kpashoks/replicate-clone/main/runpod-wan-animate/server.py" \
+    -o /opt/wan-animate/server.py.new
+mv /opt/wan-animate/server.py.new /opt/wan-animate/server.py
+echo "[update] server.py updated."
+
+echo "[update] Stopping any running uvicorn..."
+pkill -f 'uvicorn.*server:app' || echo "[update]   (no uvicorn was running)"
+
+# Brief wait so the port is released
+sleep 2
+
+echo "[update] Restarting in background..."
+nohup /opt/wan-animate/start.sh > /var/log/wan-animate.log 2>&1 &
+sleep 3
+echo "[update] Done. Tail logs with: tail -f /var/log/wan-animate.log"
+SCRIPT
+chmod +x /opt/wan-animate/update_server.sh
+log "  /opt/wan-animate/update_server.sh installed (executable)."
+log ""
+
 # ============================================================================
 # 6. Done — show next steps
 # ============================================================================
@@ -302,6 +342,11 @@ THEN: copy that base URL into your local app's .env as:
   WAN_ANIMATE_ENDPOINT=https://<pod-id>-8000.proxy.runpod.net
 
 Restart your local uvicorn and submit a character-swap test.
+
+If you later need to update server.py from main without re-running
+the full setup:
+
+  /opt/wan-animate/update_server.sh
 
 ==========================================================
 EOF

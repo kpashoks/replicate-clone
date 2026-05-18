@@ -244,6 +244,85 @@ du -sh $VOLUME_ROOT/models/* /workspace/output
 
 You should see filled `checkpoints/`, `diffusion_models/`, `text_encoders/`, `vae/`, `clip_vision/`, `ipadapter/`, `controlnet/`, `sam2/`. **Terminate the temp pod** when done.
 
+### 6b. (For Character Swap in video) Deploy the wan-animate inference Pod
+
+The character-swap model card runs on its own RunPod **Pod** (long-running,
+distinct from the Serverless endpoints below). The Pod uses RunPod's stock
+PyTorch template plus a setup script that installs the Wan-Video Python code
+on top.
+
+We tried building our own Docker image first (see `runpod-wan-animate/Dockerfile`)
+but pip's transitive dependency resolution kept upgrading `torch` to versions
+whose CUDA needs newer drivers than RunPod hosts provide. The SSH-into-stock-
+template approach sidesteps that fight entirely.
+
+**Deploy the Pod:**
+
+- RunPod console → Pods → Deploy → choose template
+  `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`
+- GPU: **24 GB+ minimum** — RTX 6000 Ada 48 GB recommended (Wan 2.2 Animate
+  14B at bf16 needs ~28 GB for weights + activations; 48 GB gives headroom)
+- Region: **same as your Network Volume** (e.g. US-KS-2)
+- Network volume: attach the existing `replicate-local-models` volume at
+  **`/workspace`** (not `/runpod-volume` — this template's convention)
+- Container disk: 30 GB
+- Expose HTTP port: **8000**
+- Enable Web Terminal in the Pod settings
+- Deploy
+
+**Once the Pod is running**, open the Web Terminal and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/replicate-clone/main/runpod-wan-animate/setup_wan_pod.sh | bash
+```
+
+(Replace `<owner>` with your GitHub username.)
+
+The script:
+- Verifies torch + CUDA are working on the host
+- Verifies all weight files are present on `/workspace/`
+- Clones [Wan-Video/Wan2.2](https://github.com/Wan-Video/Wan2.2) to `/opt/wan22`
+- Installs the missing Python packages at versions pinned to be compatible
+  with the pre-installed torch (so pip doesn't upgrade torch transitively)
+- Downloads `server.py` from this repo
+- Writes `/opt/wan-animate/start.sh` for one-command server startup
+
+**Start the server (in the same terminal):**
+
+```bash
+nohup /opt/wan-animate/start.sh > /var/log/wan-animate.log 2>&1 &
+tail -f /var/log/wan-animate.log
+```
+
+`nohup … &` runs it in the background so it survives terminal close.
+Ctrl+C the `tail` to stop watching logs (server keeps running).
+
+**Verify:**
+
+Open in your browser: `https://<pod-id>-8000.proxy.runpod.net/debug/info`
+
+You should see JSON like:
+```json
+{
+  "python": "3.11.X",
+  "torch": "2.4.0+cu124",
+  "cuda_available": true,
+  "cuda_device_name": "NVIDIA RTX 6000 Ada Generation",
+  "wan_repo_exists": true,
+  "sam2_path": "..."
+}
+```
+
+Save this Pod's port-8000 URL — you'll wire it into `.env` as
+`WAN_ANIMATE_ENDPOINT` in step 10 below.
+
+**Updating server.py later** (after pushing a code change to `main`):
+```bash
+/opt/wan-animate/update_server.sh
+```
+This pulls a fresh `server.py` from GitHub and restarts uvicorn in the
+background. No need to re-run the full setup.
+
 ### 7. Create the main Serverless endpoint
 
 RunPod console → Serverless → **+ New Endpoint**:
@@ -293,6 +372,11 @@ RUNPOD_API_KEY=rpa_xxxxxxxxxx
 RUNPOD_ENDPOINT_ID=<main endpoint ID from step 7>
 RUNPOD_DOWNLOADER_ENDPOINT_ID=<downloader endpoint ID from step 8>
 RUNPOD_TIMEOUT_SECONDS=600
+
+# Character-swap (video). Public URL of the wan-animate Pod from step 6b.
+# Leave empty if you don't need the character-swap card yet.
+WAN_ANIMATE_ENDPOINT=https://<pod-id>-8000.proxy.runpod.net
+WAN_ANIMATE_TIMEOUT_SECONDS=600
 
 QWEN_MODEL_ID=Qwen/Qwen3-4B-Instruct-2507
 DATA_DIR=./data
