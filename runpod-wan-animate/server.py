@@ -241,6 +241,93 @@ def _patch_wan_flash_attention_to_sdpa() -> None:
         rebound,
     )
 
+    # ---- flash_attn_func shim ------------------------------------------
+    #
+    # In addition to Wan's own flash_attention wrapper, wan/modules/animate/
+    # face_blocks.py imports the flash-attn package directly:
+    #
+    #     try:
+    #         from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
+    #     except ImportError:
+    #         flash_attn_func = None
+    #
+    # Then `attention(...)` defaults to mode="flash" and calls
+    # `flash_attn_func(q, k, v)` -- which is None when flash-attn isn't
+    # installed, so it raises `TypeError: 'NoneType' object is not callable`.
+    # The face-adapter inside the DiT goes through this every diffusion step.
+    #
+    # Shape contract for flash_attn_func: q/k/v are [B, S, H, D]; output is
+    # [B, S, H, D] with the same dtype as q. SDPA wants [B, H, S, D], so
+    # transpose in/out.
+    def _flash_attn_func_sdpa(
+        q,
+        k,
+        v,
+        dropout_p=0.0,
+        softmax_scale=None,
+        causal=False,
+        window_size=(-1, -1),
+        alibi_slopes=None,
+        deterministic=False,
+        return_attn_probs=False,
+        **kwargs,
+    ):
+        out_dtype = q.dtype
+        # [B, S, H, D] -> [B, H, S, D]
+        q_ = q.transpose(1, 2)
+        k_ = k.transpose(1, 2)
+        v_ = v.transpose(1, 2)
+
+        # GQA support if K/V have fewer heads than Q.
+        if q_.shape[1] != k_.shape[1]:
+            rep = q_.shape[1] // k_.shape[1]
+            k_ = k_.repeat_interleave(rep, dim=1)
+            v_ = v_.repeat_interleave(rep, dim=1)
+
+        # SDPA prefers half/bf16. Match flash_attn's behavior.
+        if q_.dtype not in (torch.float16, torch.bfloat16):
+            q_ = q_.to(torch.bfloat16)
+            k_ = k_.to(torch.bfloat16)
+            v_ = v_.to(torch.bfloat16)
+
+        out = F.scaled_dot_product_attention(
+            q_, k_, v_,
+            dropout_p=dropout_p,
+            is_causal=bool(causal),
+            scale=softmax_scale,
+        )
+        # [B, H, S, D] -> [B, S, H, D]
+        return out.transpose(1, 2).contiguous().to(out_dtype)
+
+    # Sweep all loaded wan.* modules for `flash_attn_func` attributes that
+    # are None (or that point to a real flash_attn function we want to
+    # replace anyway). face_blocks.py is the known callsite; others may
+    # exist.
+    _MISSING = object()
+    fn_rebound = 0
+    for mod_name, mod in list(_sys.modules.items()):
+        if not mod_name.startswith("wan"):
+            continue
+        if mod is None:
+            continue
+        try:
+            current = getattr(mod, "flash_attn_func", _MISSING)
+        except Exception:
+            continue
+        if current is _MISSING:
+            continue
+        # Replace whether it's None (the import-failed case we expect) or a
+        # real function (defensive -- we want SDPA everywhere).
+        setattr(mod, "flash_attn_func", _flash_attn_func_sdpa)
+        fn_rebound += 1
+        log.info("  rebound %s.flash_attn_func -> SDPA shim (was %r)",
+                 mod_name, type(current).__name__)
+
+    log.info(
+        "Patched flash_attn_func -> torch SDPA in %d wan.* submodules",
+        fn_rebound,
+    )
+
 
 # --- logging --------------------------------------------------------------
 
