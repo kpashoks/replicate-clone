@@ -50,47 +50,6 @@ class ImageEditParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
-class ImageCharSwapParams(BaseModel):
-    """SDXL + IP-Adapter + ControlNet OpenPose character replacement in a still image.
-
-    Output dimensions are derived automatically from the source image (via the
-    workflow's GetImageSize node) so the extracted pose skeleton, the latent,
-    and the output all stay at the same aspect ratio. No width/height knobs.
-    """
-    prompt: str = Field(
-        "",
-        max_length=2000,
-        description="Optional scene/style direction. Identity comes from the reference image.",
-    )
-    negative_prompt: str = Field(_SDXL_DEFAULT_NEGATIVE, max_length=2000)
-    steps: int = Field(25, ge=1, le=60)
-    cfg: float = Field(7.0, ge=1.0, le=15.0)
-    identity_strength: float = Field(
-        0.8, ge=0.0, le=2.0,
-        description=(
-            "IP-Adapter weight (style-transfer mode). 0.8 default keeps identity "
-            "without crowding out the pose. Lower if pose still doesn't show; "
-            "higher if face/body doesn't look like the reference."
-        ),
-    )
-    pose_strength: float = Field(
-        1.0, ge=0.0, le=2.0,
-        description=(
-            "ControlNet OpenPose strength. 1.0 default (xinsir's recommended max). "
-            "Above 1.0 starts over-constraining: pose lands but anatomy distorts."
-        ),
-    )
-    pose_end_percent: float = Field(
-        0.8, ge=0.0, le=1.0,
-        description=(
-            "Fraction of denoising during which ControlNet is active. 0.8 default "
-            "= enforce pose for the first 80%% of steps, let the model self-correct "
-            "anatomy in the last 20%%. Lower if anatomy still looks broken."
-        ),
-    )
-    seed: int = Field(-1, description="-1 means random")
-
-
 class CharacterSwapParams(BaseModel):
     """Wan 2.2 Animate via the dedicated wan-animate inference server.
 
@@ -177,7 +136,6 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "juggernaut-xl": JuggernautParams,
     "image-edit": ImageEditParams,
-    "image-char-swap": ImageCharSwapParams,
     "character-swap": CharacterSwapParams,
     # Atlas T2I
     "atlas-flux-2-pro": AtlasT2IParams,
@@ -198,7 +156,6 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "text-to-image": 0,
     "juggernaut-xl": 0,
     "image-edit": 1,
-    "image-char-swap": 2,  # [source_image, reference_character_image]
     "character-swap": 2,  # [source_video, reference_character_image]
     # Atlas T2I: no inputs
     "atlas-flux-2-pro": 0,
