@@ -104,7 +104,7 @@ REGISTRY: dict[str, ModelEntry] = {
     "image-edit": ModelEntry(
         slug="image-edit",
         label="FLUX Kontext Dev",
-        description="Edit an uploaded image with a text prompt using FLUX.1 Kontext [dev].",
+        description="Edit an uploaded image with a text prompt using FLUX.1 Kontext [dev]. Runs locally on your GPU - no per-image cost, but slower and queued behind any other local job.",
         workflow_file="imgedit_flux_kontext.json",
         output_kind="image",
         accepts_image=True,
@@ -117,6 +117,24 @@ REGISTRY: dict[str, ModelEntry] = {
         price_per_image_usd=None,
         max_ref_images=1,
         provider_label="Local · FLUX Kontext Dev",
+    ),
+    "atlas-flux-kontext-dev": ModelEntry(
+        slug="atlas-flux-kontext-dev",
+        label="FLUX Kontext Dev (Atlas)",
+        description="Same FLUX.1 Kontext [dev] weights as the local entry, hosted on Atlas Cloud's GPUs. Use this when your local GPU is busy or you want faster turnaround. Atlas does not content-moderate BFL models.",
+        provider="atlas",
+        atlas_model_id="black-forest-labs/flux-kontext-dev",
+        output_kind="image",
+        accepts_image=True,
+        stage=1,
+        available=True,
+        task="i2i",
+        nsfw=True,
+        speed="fast",
+        best_for="precise edits (hosted)",
+        price_per_image_usd=0.025,
+        max_ref_images=1,
+        provider_label="Black Forest Labs · Atlas",
     ),
     # ---- Wan 2.2 Animate via dedicated HTTP server -----------------------
     # Bypasses ComfyUI entirely. See runpod-wan-animate/ for the inference
