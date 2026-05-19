@@ -12,6 +12,7 @@ import storage
 import workflows
 from config import settings
 from models_registry import ModelEntry
+from providers.atlas_client import AtlasClient, AtlasError, extract_output_urls
 from runpod_client import RunPodClient, RunPodError
 from wan_animate_client import WanAnimateClient, WanAnimateError
 
@@ -134,6 +135,8 @@ async def run_job(
         await _run_runpod_job(job_id, model, params, input_ids)
     elif model.provider == "wan-animate-http":
         await _run_wan_animate_http_job(job_id, model, params, input_ids)
+    elif model.provider == "atlas":
+        await _run_atlas_job(job_id, model, params, input_ids)
     else:
         registry.update(
             job_id,
@@ -485,3 +488,179 @@ async def _run_wan_animate_http_job(
     output_name = f"{slug}_{job_id}.mp4"
     saved = storage.write_output(job_id, output_name, mp4_bytes)
     registry.update(job_id, status="succeeded", output_files=[saved])
+
+
+# =====================================================================
+# Atlas Cloud
+# =====================================================================
+
+_EXT_TO_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+}
+
+
+def _content_type_for(path) -> str:
+    from pathlib import Path
+
+    return _EXT_TO_MIME.get(Path(path).suffix.lower(), "application/octet-stream")
+
+
+def _build_atlas_image_body(model: ModelEntry, params: dict) -> dict:
+    """Translate the local form params into Atlas's image-API body.
+
+    Per Atlas's playground examples, the documented top-level fields are
+    `model`, `prompt`, `images` (for I2I), and a small set of optional knobs
+    that vary per vendor (size, seed, negative_prompt, quality, etc.). The
+    local form sends a permissive superset; we only forward seed and let the
+    model fall back to its own defaults for everything else, since some
+    vendors strictly reject unknown keys.
+
+    `prompt` is added by AtlasClient.submit_image()/_submit; don't duplicate
+    it here.
+    """
+    body: dict = {}
+    seed = params.get("seed")
+    if seed is not None and seed != -1:
+        # Atlas validates `seed <= 2147483647` (signed INT32 max) at the
+        # Pydantic layer and returns 400 if exceeded. Clamp defensively in
+        # case the value came from a user-typed field rather than our own
+        # generator (which already uses randbits(31)).
+        ATLAS_SEED_MAX = 2_147_483_647
+        if seed > ATLAS_SEED_MAX:
+            seed = seed % (ATLAS_SEED_MAX + 1)
+        body["seed"] = int(seed)
+    return body
+
+
+async def _run_atlas_job(
+    job_id: str,
+    model: ModelEntry,
+    params: dict,
+    input_ids: list[str] | None,
+) -> None:
+    """Atlas Cloud path. Submits via providers.atlas_client.AtlasClient, polls
+    until terminal, then downloads each returned output URL into
+    data/outputs/<job_id>/.
+
+    For I2I models: each reference image is uploaded to Atlas's media bucket
+    first (via /api/v1/model/uploadMedia), and the returned https URL is
+    placed into the request body using the shape declared by
+    model.atlas_request_shape. Atlas rejects data: URLs ("got 0 images" on
+    Alibaba models) so the upload step is mandatory.
+    """
+    slug = model.slug
+
+    if not model.atlas_model_id:
+        registry.update(
+            job_id,
+            status="failed",
+            error=f"atlas provider but no atlas_model_id set for slug {slug!r}",
+        )
+        return
+
+    # ---- Instantiate client (early so we can use upload_media) ---------
+    try:
+        client = AtlasClient()
+    except AtlasError as e:
+        registry.update(job_id, status="failed", error=str(e))
+        return
+
+    # ---- Build request body --------------------------------------------
+    body = _build_atlas_image_body(model, params)
+
+    # Attach reference images if this is an I2I slug. Per Atlas's playground
+    # examples (GPT Image 2 Edit, Wan 2.6 Image Edit, etc.), all I2I models
+    # take `images: [<https url>, ...]` as a top-level array — even for
+    # single-image vendors. Atlas rejects data: URLs, so each input file is
+    # uploaded to Atlas's media bucket first and the returned
+    # storage.atlascloud.ai URL is what we put into the body.
+    if model.accepts_image and input_ids:
+        atlas_urls: list[str] = []
+        for input_id in input_ids:
+            try:
+                path = storage.resolve_input(input_id)
+            except (FileNotFoundError, OSError) as e:
+                registry.update(job_id, status="failed", error=f"upload {input_id}: {e}")
+                return
+            try:
+                url = await client.upload_media(
+                    path, content_type=_content_type_for(path)
+                )
+            except AtlasError as e:
+                registry.update(job_id, status="failed", error=f"atlas upload {input_id}: {e}")
+                return
+            atlas_urls.append(url)
+        body[model.atlas_images_param] = atlas_urls
+
+    # ---- Submit --------------------------------------------------------
+    try:
+        if model.output_kind == "video":
+            prediction_id = await client.submit_video(
+                model.atlas_model_id, params.get("prompt", ""), **body
+            )
+        else:
+            prediction_id = await client.submit_image(
+                model.atlas_model_id, params.get("prompt", ""), **body
+            )
+    except AtlasError as e:
+        registry.update(job_id, status="failed", error=f"submit: {e}")
+        return
+
+    registry.update(job_id, status="running", runpod_request_id=prediction_id)
+
+    def _on_status(data: dict) -> None:
+        # Surface raw Atlas status through the runpod_status field so the
+        # existing UI badge shows progress without a schema change.
+        d = data.get("data") if isinstance(data.get("data"), dict) else data
+        s = d.get("status") or data.get("status")
+        if s:
+            registry.update(job_id, runpod_status=str(s))
+
+    # ---- Poll ----------------------------------------------------------
+    try:
+        final = await client.wait_for_completion(
+            prediction_id,
+            max_seconds=_MAX_POLL_SECONDS.get(slug, settings.ATLAS_TIMEOUT_SECONDS),
+            on_status=_on_status,
+        )
+    except AtlasError as e:
+        registry.update(job_id, status="failed", error=f"poll: {e}")
+        return
+
+    # ---- Download outputs ----------------------------------------------
+    urls = extract_output_urls(final)
+    if not urls:
+        registry.update(
+            job_id,
+            status="failed",
+            error=f"Atlas returned no output URLs. raw={str(final)[:500]}",
+        )
+        return
+
+    output_files: list[str] = []
+    for i, url in enumerate(urls):
+        try:
+            raw = await client.download(url)
+        except AtlasError as e:
+            registry.update(job_id, status="failed", error=f"download {url}: {e}")
+            return
+        # Derive a filename from the URL path; fall back to numbered .png.
+        from urllib.parse import urlparse
+
+        name = (urlparse(url).path.rsplit("/", 1)[-1] or "").strip()
+        if not name or "." not in name:
+            name = f"{slug}_{job_id}_{i:02d}.png"
+        saved = storage.write_output(job_id, name, raw)
+        output_files.append(saved)
+
+    output_files.sort()
+    registry.update(job_id, status="succeeded", output_files=output_files)

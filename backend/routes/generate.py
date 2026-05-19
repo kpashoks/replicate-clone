@@ -149,12 +149,48 @@ class CharacterSwapParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+class AtlasT2IParams(BaseModel):
+    """Permissive shared schema for Atlas-hosted T2I models. Atlas's per-vendor
+    models accept different subsets of these; the backend forwards what's
+    set and Atlas ignores unknowns. Fields here mirror what the consolidated
+    task page sends.
+    """
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    width: int = Field(1024, ge=256, le=2048)
+    height: int = Field(1024, ge=256, le=2048)
+    steps: int = Field(20, ge=1, le=50)
+    guidance: float = Field(3.5, ge=0.0, le=20.0)
+    seed: int = Field(-1, description="-1 means random")
+
+
+class AtlasI2IParams(BaseModel):
+    """Permissive shared schema for Atlas-hosted I2I models. Width/height are
+    typically derived from the reference image, so they're omitted here.
+    """
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    steps: int = Field(20, ge=1, le=50)
+    guidance: float = Field(3.5, ge=0.0, le=20.0)
+    seed: int = Field(-1, description="-1 means random")
+
+
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "juggernaut-xl": JuggernautParams,
     "image-edit": ImageEditParams,
     "image-char-swap": ImageCharSwapParams,
     "character-swap": CharacterSwapParams,
+    # Atlas T2I
+    "atlas-flux-2-pro": AtlasT2IParams,
+    "atlas-ideogram-v3": AtlasT2IParams,
+    "atlas-imagen-4-ultra": AtlasT2IParams,
+    "atlas-flux-dev": AtlasT2IParams,
+    "atlas-flux-schnell": AtlasT2IParams,
+    # Atlas I2I
+    "atlas-gpt-image-2-edit": AtlasI2IParams,
+    "atlas-nano-banana-2-edit": AtlasI2IParams,
+    "atlas-qwen-edit-plus": AtlasI2IParams,
+    "atlas-wan-2-6-edit": AtlasI2IParams,
+    "atlas-grok-imagine-edit": AtlasI2IParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -164,6 +200,18 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "image-edit": 1,
     "image-char-swap": 2,  # [source_image, reference_character_image]
     "character-swap": 2,  # [source_video, reference_character_image]
+    # Atlas T2I: no inputs
+    "atlas-flux-2-pro": 0,
+    "atlas-ideogram-v3": 0,
+    "atlas-imagen-4-ultra": 0,
+    "atlas-flux-dev": 0,
+    "atlas-flux-schnell": 0,
+    # Atlas I2I: at least one reference image
+    "atlas-gpt-image-2-edit": 1,
+    "atlas-nano-banana-2-edit": 1,
+    "atlas-qwen-edit-plus": 1,
+    "atlas-wan-2-6-edit": 1,
+    "atlas-grok-imagine-edit": 1,
 }
 
 
@@ -240,7 +288,12 @@ async def submit_generate(slug: str, req: GenerateRequest) -> GenerateResponse:
 
     params = validated.model_dump()
     if params.get("seed", -1) == -1:
-        params["seed"] = secrets.randbits(32)
+        # randbits(31) gives [0, 2**31 - 1] = signed-INT32 positive range.
+        # randbits(32) would exceed Atlas Cloud's seed limit (Atlas Pydantic
+        # validates seed <= 2147483647). All other providers (Wan-Animate,
+        # FLUX, etc.) accept any non-negative int up to INT32_MAX, so 31
+        # bits is the lowest common denominator that works everywhere.
+        params["seed"] = secrets.randbits(31)
 
     job = jobs.registry.create(slug, params)
     jobs.schedule(
