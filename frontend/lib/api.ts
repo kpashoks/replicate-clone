@@ -131,6 +131,38 @@ export async function cancelJob(jobId: string): Promise<Job> {
   return jsonOrThrow<Job>(res);
 }
 
+export type SaveResponse = {
+  saved_path: string;
+  filename: string;
+};
+
+export async function saveJobOutput(
+  jobId: string,
+  folder: string,
+  filename: string,
+  outputIndex = 0,
+): Promise<SaveResponse> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      folder,
+      filename,
+      output_index: outputIndex,
+    }),
+  });
+  return jsonOrThrow<SaveResponse>(res);
+}
+
+export type AppSettings = {
+  default_download_dir: string;
+};
+
+export async function getSettings(): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE}/api/settings`, { cache: "no-store" });
+  return jsonOrThrow<AppSettings>(res);
+}
+
 /** Build an absolute URL for a server-served file path like "/api/files/outputs/<id>/<name>". */
 export function fileUrl(path: string): string {
   if (!path.startsWith("/")) path = "/" + path;

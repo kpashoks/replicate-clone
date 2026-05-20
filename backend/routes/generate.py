@@ -1,4 +1,7 @@
+import re
 import secrets
+import shutil
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -6,6 +9,7 @@ from pydantic import BaseModel, Field
 
 import jobs
 import models_registry
+from config import settings
 from runpod_client import RunPodClient, RunPodError
 
 
@@ -355,3 +359,171 @@ async def cancel_job(job_id: str) -> JobView:
     j2 = jobs.registry.get(job_id)
     assert j2 is not None
     return _to_view(j2)
+
+
+# =====================================================================
+# Save & Rename: copy job output to a user-chosen folder + filename.
+# =====================================================================
+
+
+class SaveRequest(BaseModel):
+    folder: str = Field(..., min_length=1, max_length=400)
+    filename: str = Field(..., min_length=1, max_length=200)
+    output_index: int = Field(
+        0, ge=0, le=99,
+        description=(
+            "Which output file to save when a job has multiple outputs. "
+            "Defaults to 0 (the first). Almost always 0 for image/video jobs."
+        ),
+    )
+
+
+class SaveResponse(BaseModel):
+    saved_path: str
+    filename: str
+
+
+# Windows + POSIX reserved characters that cannot appear in filenames.
+# We strip these to keep the save action robust across both OS families.
+_INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+@router.post("/jobs/{job_id}/save", response_model=SaveResponse)
+async def save_job_output(job_id: str, body: SaveRequest) -> SaveResponse:
+    """Copy a completed job's output file to a user-chosen folder with a
+    user-chosen filename. The canonical copy in data/outputs/<job_id>/
+    stays put; this is purely a convenience copy for the user's library.
+    """
+    j = jobs.registry.get(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if j.status != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job is {j.status}; only succeeded jobs can be saved.",
+        )
+    if not j.output_files:
+        raise HTTPException(status_code=404, detail="Job has no output files")
+    if body.output_index >= len(j.output_files):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"output_index {body.output_index} out of range "
+                f"(job has {len(j.output_files)} output(s))."
+            ),
+        )
+
+    # Resolve the source file. j.output_files entries are stored as the
+    # path the frontend uses ("outputs/<job_id>/<name>"), so reassemble
+    # into an absolute path under data_dir_abs.
+    rel = j.output_files[body.output_index]
+    src = (settings.data_dir_abs / rel).resolve()
+    # Path-traversal guard.
+    try:
+        src.relative_to(settings.data_dir_abs.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid output path")
+    if not src.is_file():
+        raise HTTPException(
+            status_code=404, detail=f"Output file missing on disk: {rel}",
+        )
+
+    # Validate + sanitize the requested filename. Reject path components
+    # (no slashes), reject reserved chars, reject empty-after-strip.
+    requested = body.filename.strip()
+    if not requested:
+        raise HTTPException(status_code=422, detail="filename is empty")
+    sanitized = _INVALID_FILENAME_CHARS.sub("", requested)
+    if not sanitized:
+        raise HTTPException(
+            status_code=422,
+            detail="filename contains only reserved characters",
+        )
+
+    # Preserve the source extension. Don't let the user change .png to .exe
+    # or strip the extension entirely; they should rename the basename
+    # only. If they typed an extension that matches, accept it; otherwise
+    # append the source extension.
+    src_ext = src.suffix.lower()
+    typed_ext = Path(sanitized).suffix.lower()
+    if typed_ext == src_ext:
+        final_name = sanitized
+    elif typed_ext:
+        # They typed a different extension - replace it with the source's.
+        final_name = Path(sanitized).stem + src_ext
+    else:
+        final_name = sanitized + src_ext
+
+    # Resolve the destination folder. Support ~ expansion and auto-create
+    # the folder (parents=True) if it doesn't exist. Surface clear errors
+    # on permission/IO failures.
+    try:
+        dest_dir = Path(body.folder).expanduser().resolve()
+    except (OSError, RuntimeError) as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not resolve folder {body.folder!r}: {e}",
+        )
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError) as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not create folder {dest_dir}: {e}",
+        )
+    if not dest_dir.is_dir():
+        raise HTTPException(
+            status_code=422,
+            detail=f"Folder is not a directory: {dest_dir}",
+        )
+
+    # Refuse to overwrite an existing file - bump with -1, -2, ... until
+    # we find a free name. This avoids surprises if the user repeatedly
+    # saves outputs with the same desired filename.
+    dest = dest_dir / final_name
+    if dest.exists():
+        stem = Path(final_name).stem
+        suffix = Path(final_name).suffix
+        for i in range(1, 1000):
+            candidate = dest_dir / f"{stem}-{i}{suffix}"
+            if not candidate.exists():
+                dest = candidate
+                final_name = candidate.name
+                break
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Too many existing files matching {stem}-N{suffix}; "
+                    "clean up the folder or pick a different name."
+                ),
+            )
+
+    try:
+        shutil.copy2(src, dest)
+    except (OSError, PermissionError, shutil.Error) as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Copy failed: {e}",
+        )
+
+    return SaveResponse(saved_path=str(dest), filename=final_name)
+
+
+# =====================================================================
+# Settings: surface env-configured defaults the frontend needs.
+# =====================================================================
+
+
+class SettingsView(BaseModel):
+    default_download_dir: str = ""
+
+
+@router.get("/settings", response_model=SettingsView)
+async def get_settings() -> SettingsView:
+    """Read-only view of frontend-relevant settings. Currently just the
+    default DOWNLOAD_DIR so the rename modal can pre-fill the folder.
+    """
+    d = settings.download_dir_abs
+    return SettingsView(default_download_dir=str(d) if d else "")

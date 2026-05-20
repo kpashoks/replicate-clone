@@ -16,6 +16,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -26,6 +35,8 @@ import {
   fetchModels,
   fileUrl,
   getJob,
+  getSettings,
+  saveJobOutput,
   submitJob,
   type UploadResponse,
 } from "@/lib/api";
@@ -61,6 +72,11 @@ type FormParams = {
   // otherwise so they don't clutter the UI).
   lora_url: string;
   lora_scale: number;
+  // Where to copy the final output when the user clicks Save & Rename
+  // on a succeeded job. Pure client state -- NOT sent with the submit;
+  // pre-fills the rename modal. Empty = fall back to env default
+  // (DOWNLOAD_DIR), fetched once from /api/settings on mount.
+  download_dir: string;
 };
 
 const DEFAULTS: FormParams = {
@@ -74,6 +90,7 @@ const DEFAULTS: FormParams = {
   seed: -1,
   lora_url: "",
   lora_scale: 1.0,
+  download_dir: "",
 };
 
 /**
@@ -155,10 +172,20 @@ export default function TaskPage() {
   const [allModels, setAllModels] = useState<ModelEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // The env-configured default download folder, used as the placeholder
+  // for the "Save to folder" form field and as the fallback in the
+  // rename modal when the form field is empty.
+  const [defaultDownloadDir, setDefaultDownloadDir] = useState<string>("");
+
   useEffect(() => {
     fetchModels()
       .then(setAllModels)
       .catch((e) => setLoadError(String(e)));
+    // Don't block the page on settings - if it fails, the user can still
+    // type a folder manually in the modal.
+    getSettings()
+      .then((s) => setDefaultDownloadDir(s.default_download_dir))
+      .catch(() => {});
   }, []);
 
   const taskModels = useMemo(
@@ -588,6 +615,33 @@ export default function TaskPage() {
               </div>
             </div>
 
+            {/* ----- Save-to folder override (pre-fills rename modal) ----- */}
+            <div className="space-y-2">
+              <Label htmlFor="download_dir">
+                Save to folder{" "}
+                <span className="text-muted-foreground font-normal">
+                  (optional)
+                </span>
+              </Label>
+              <Input
+                id="download_dir"
+                type="text"
+                placeholder={
+                  defaultDownloadDir
+                    ? `Default: ${defaultDownloadDir}`
+                    : "e.g. C:\\Users\\you\\Pictures\\replicate-out"
+                }
+                value={form.download_dir}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, download_dir: e.target.value }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Pre-fills the destination in the Save &amp; Rename modal
+                after the job finishes. Leave empty to use the .env default.
+              </p>
+            </div>
+
             {/* ----- LoRA inputs (only for Atlas LoRA-capable models) ----- */}
             {modelAcceptsLora(selectedModel) && (
               <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
@@ -729,7 +783,12 @@ export default function TaskPage() {
                       alt="Generated output"
                       className="w-full rounded-md border border-border"
                     />
-                    <OutputActions url={outputUrl} />
+                    <OutputActions
+                      url={outputUrl}
+                      jobId={currentJob.id}
+                      preferredFolder={form.download_dir}
+                      defaultFolder={defaultDownloadDir}
+                    />
                   </div>
                 )}
 
@@ -740,7 +799,12 @@ export default function TaskPage() {
                       controls
                       className="w-full rounded-md border border-border"
                     />
-                    <OutputActions url={outputUrl} />
+                    <OutputActions
+                      url={outputUrl}
+                      jobId={currentJob.id}
+                      preferredFolder={form.download_dir}
+                      defaultFolder={defaultDownloadDir}
+                    />
                   </div>
                 )}
 
@@ -933,23 +997,203 @@ function StatusBadge({ status }: { status: Job["status"] }) {
   );
 }
 
-function OutputActions({ url }: { url: string }) {
+function OutputActions({
+  url,
+  jobId,
+  preferredFolder,
+  defaultFolder,
+}: {
+  /** Absolute URL the <img>/<video> is loading from. Used to derive the
+   *  default filename for the rename modal (basename of the URL path). */
+  url: string;
+  /** Job id; passed to /api/jobs/{id}/save when the user confirms. */
+  jobId: string;
+  /** Folder the user typed in the form's "Save to folder" override.
+   *  Empty = fall back to defaultFolder. */
+  preferredFolder: string;
+  /** Env-default (DOWNLOAD_DIR) from /api/settings. May be empty. */
+  defaultFolder: string;
+}) {
+  const [saveOpen, setSaveOpen] = useState(false);
+
+  // Default filename for the modal = basename of the URL. e.g.
+  //   http://localhost:8000/api/files/outputs/abc123/0.png  ->  0.png
+  // If the path is empty for any reason, fall back to a sensible default.
+  const initialFilename =
+    (() => {
+      try {
+        const p = new URL(url).pathname;
+        const name = p.substring(p.lastIndexOf("/") + 1);
+        return name || "output.png";
+      } catch {
+        return "output.png";
+      }
+    })();
+
+  // Folder pre-fill priority: the per-job form override, then the env
+  // default. If both are empty the user has to type one in the modal.
+  const initialFolder = preferredFolder.trim() || defaultFolder;
+
   return (
-    <div className="flex gap-2">
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={buttonVariants({ variant: "outline", size: "sm" })}
-      >
-        Open full size
-      </a>
-      <a
-        href={`${url}?download=1`}
-        className={buttonVariants({ variant: "outline", size: "sm" })}
-      >
-        Download
-      </a>
-    </div>
+    <>
+      <div className="flex gap-2 flex-wrap">
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+        >
+          Open full size
+        </a>
+        <a
+          href={`${url}?download=1`}
+          className={buttonVariants({ variant: "outline", size: "sm" })}
+          title="Browser-native download to your Downloads folder"
+        >
+          Download
+        </a>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setSaveOpen(true)}
+          title="Pick a folder and filename, then copy the output there"
+        >
+          Save &amp; Rename…
+        </Button>
+      </div>
+      <SaveModal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        jobId={jobId}
+        initialFilename={initialFilename}
+        initialFolder={initialFolder}
+      />
+    </>
+  );
+}
+
+function SaveModal({
+  open,
+  onClose,
+  jobId,
+  initialFilename,
+  initialFolder,
+}: {
+  open: boolean;
+  onClose: () => void;
+  jobId: string;
+  initialFilename: string;
+  initialFolder: string;
+}) {
+  const [filename, setFilename] = useState(initialFilename);
+  const [folder, setFolder] = useState(initialFolder);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [savedPath, setSavedPath] = useState<string | null>(null);
+
+  // Reset fields whenever the modal is opened for a (possibly different)
+  // job/output. Using `open` as the dep guarantees we re-sync from
+  // initialFilename/initialFolder each open without leaking state across
+  // back-to-back runs.
+  useEffect(() => {
+    if (open) {
+      setFilename(initialFilename);
+      setFolder(initialFolder);
+      setBusy(false);
+      setError(null);
+      setSavedPath(null);
+    }
+  }, [open, initialFilename, initialFolder]);
+
+  const canSubmit =
+    !busy && filename.trim().length > 0 && folder.trim().length > 0;
+
+  const onSubmit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await saveJobOutput(jobId, folder.trim(), filename.trim());
+      setSavedPath(res.saved_path);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save &amp; Rename</DialogTitle>
+          <DialogDescription>
+            Copy this output to a folder on your machine with a custom
+            filename. The canonical copy in <code>data/outputs/</code>{" "}
+            stays in place.
+          </DialogDescription>
+        </DialogHeader>
+
+        {savedPath ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-green-500/40 bg-green-500/10 p-3 text-sm">
+              <p className="font-medium text-green-700 dark:text-green-400">
+                ✓ Saved
+              </p>
+              <p className="mt-1 font-mono text-xs break-all">{savedPath}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="rename-filename">Filename</Label>
+              <Input
+                id="rename-filename"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="my-image.png"
+              />
+              <p className="text-xs text-muted-foreground">
+                The original extension is preserved if you change or omit
+                yours.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="rename-folder">Destination folder</Label>
+              <Input
+                id="rename-folder"
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                placeholder={
+                  initialFolder ||
+                  "e.g. C:\\Users\\you\\Pictures\\replicate-out"
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Auto-created if it doesn&apos;t exist. Supports{" "}
+                <code>~</code> expansion.
+              </p>
+            </div>
+            {error && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <DialogClose
+            render={<Button variant="outline" disabled={busy} />}
+          >
+            {savedPath ? "Done" : "Cancel"}
+          </DialogClose>
+          {!savedPath && (
+            <Button onClick={onSubmit} disabled={!canSubmit}>
+              {busy ? "Saving…" : "Save"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

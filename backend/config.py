@@ -41,12 +41,36 @@ class Settings(BaseSettings):
     # Default to 90 min so 10-15s clips don't trip the cap. Override via env.
     WAN_ANIMATE_TIMEOUT_SECONDS: int = 5400
 
+    # Atlas Cloud (https://atlascloud.ai). Unified inference aggregator used
+    # for hosted T2I / I2I models (FLUX.2 Pro, Imagen 4 Ultra, Qwen-Image
+    # Edit Plus, etc.). Leave key empty if you haven't signed up — models
+    # with provider="atlas" will fail at submit with a clear error.
+    ATLAS_CLOUD_API_KEY: str = ""
+    ATLAS_CLOUD_BASE_URL: str = "https://api.atlascloud.ai"
+    ATLAS_TIMEOUT_SECONDS: int = 600
+
     DATA_DIR: str = "./data"
     FRONTEND_URL: str = "http://localhost:3000"
+
+    # Optional default destination folder for the "Save & Rename" feature on
+    # completed jobs. The /api/jobs/{id}/save endpoint copies output files
+    # from data/outputs/<job_id>/ into this folder (with a user-chosen
+    # filename). Empty = no default; the user must type a folder in the
+    # rename modal each time. Use a Windows-style absolute path on Windows
+    # (C:\Users\you\Pictures\replicate-out) or POSIX elsewhere.
+    DOWNLOAD_DIR: str = ""
 
     @property
     def data_dir_abs(self) -> Path:
         p = Path(self.DATA_DIR)
+        return p if p.is_absolute() else (REPO_ROOT / p).resolve()
+
+    @property
+    def download_dir_abs(self) -> Path | None:
+        """Resolved DOWNLOAD_DIR, or None if unset. Supports ~ expansion."""
+        if not self.DOWNLOAD_DIR:
+            return None
+        p = Path(self.DOWNLOAD_DIR).expanduser()
         return p if p.is_absolute() else (REPO_ROOT / p).resolve()
 
 
