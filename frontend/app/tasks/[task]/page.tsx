@@ -793,12 +793,22 @@ function buildParams(task: Task, f: FormParams): Record<string, unknown> {
     return body;
   }
   if (task === "i2i") {
-    return {
+    const body: Record<string, unknown> = {
       prompt: f.prompt,
       steps: f.steps,
       guidance: f.guidance,
       seed: f.seed,
     };
+    // Same LoRA passthrough as t2i (used by atlas-flux-kontext-dev-lora).
+    // Backend gates `loras` forwarding on the model slug, so it's safe to
+    // send these for any i2i model; we only include them when the user
+    // actually typed/picked something to keep job records tidy.
+    const lora = f.lora_url.trim();
+    if (lora) {
+      body.lora_url = lora;
+      body.lora_scale = f.lora_scale;
+    }
+    return body;
   }
   // video-swap
   return {

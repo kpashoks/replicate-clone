@@ -153,11 +153,31 @@ class AtlasT2IParams(BaseModel):
 class AtlasI2IParams(BaseModel):
     """Permissive shared schema for Atlas-hosted I2I models. Width/height are
     typically derived from the reference image, so they're omitted here.
+
+    LoRA fields are only meaningful for atlas-flux-kontext-dev-lora (and
+    any future LoRA-capable i2i models). _build_atlas_image_body filters
+    them out for non-LoRA slugs.
     """
     prompt: str = Field(..., min_length=1, max_length=2000)
     steps: int = Field(20, ge=1, le=50)
     guidance: float = Field(3.5, ge=0.0, le=20.0)
     seed: int = Field(-1, description="-1 means random")
+    lora_url: str = Field(
+        "",
+        max_length=300,
+        description=(
+            "HuggingFace repo slug for a LoRA to apply at inference (e.g. "
+            "'strangerzonehf/Flux-Super-Realism-LoRA'). HF slugs only, NOT "
+            ".safetensors URLs. Leave empty to disable. Only forwarded for "
+            "LoRA-capable i2i models (others ignore this field)."
+        ),
+    )
+    lora_scale: float = Field(
+        1.0,
+        ge=0.0,
+        le=2.0,
+        description="LoRA strength multiplier. 1.0 = default; 0.5-0.8 subtle; 1.0-1.5 strong; >2.0 over-cooks.",
+    )
 
 
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
@@ -185,6 +205,7 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-wan-2-6-edit": AtlasI2IParams,
     "atlas-grok-imagine-edit": AtlasI2IParams,
     "atlas-wan-2-7-edit": AtlasI2IParams,
+    "atlas-flux-kontext-dev-lora": AtlasI2IParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -213,6 +234,7 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-wan-2-6-edit": 1,
     "atlas-grok-imagine-edit": 1,
     "atlas-wan-2-7-edit": 1,
+    "atlas-flux-kontext-dev-lora": 1,
 }
 
 
