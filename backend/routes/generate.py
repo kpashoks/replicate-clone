@@ -113,6 +113,11 @@ class AtlasT2IParams(BaseModel):
     models accept different subsets of these; the backend forwards what's
     set and Atlas ignores unknowns. Fields here mirror what the consolidated
     task page sends.
+
+    LoRA fields are only meaningful for the atlas-flux-dev-lora entry (and
+    any future LoRA-capable models we add). _build_atlas_image_body filters
+    them out for non-LoRA slugs so plain FLUX dev / Schnell / Nano Banana
+    etc. aren't sent an unknown `loras` key.
     """
     prompt: str = Field(..., min_length=1, max_length=2000)
     width: int = Field(1024, ge=256, le=2048)
@@ -120,6 +125,29 @@ class AtlasT2IParams(BaseModel):
     steps: int = Field(20, ge=1, le=50)
     guidance: float = Field(3.5, ge=0.0, le=20.0)
     seed: int = Field(-1, description="-1 means random")
+    lora_url: str = Field(
+        "",
+        max_length=300,
+        description=(
+            "HuggingFace repo slug for a LoRA to apply at inference (e.g. "
+            "'strangerzonehf/Flux-Super-Realism-LoRA'). Atlas's flux-dev-lora "
+            "endpoint accepts HF slugs, NOT arbitrary HTTPS .safetensors URLs "
+            "despite the field name. Leave empty to disable LoRA. Only "
+            "forwarded for LoRA-capable models (others ignore this field)."
+        ),
+    )
+    lora_scale: float = Field(
+        1.0,
+        ge=0.0,
+        le=2.0,
+        description=(
+            "LoRA strength (multiplier on the LoRA weights). 1.0 = default. "
+            "0.5-0.8 for subtle style; 1.0-1.5 for strong stylization. "
+            "Above 2.0 typically over-cooks the output. Atlas doesn't "
+            "document a hard cap; 2.0 is the conservative ceiling enforced "
+            "here. Ignored when lora_url is empty."
+        ),
+    )
 
 
 class AtlasI2IParams(BaseModel):

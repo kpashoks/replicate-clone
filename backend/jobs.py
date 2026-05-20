@@ -536,6 +536,18 @@ def _build_atlas_image_body(model: ModelEntry, params: dict) -> dict:
         if seed > ATLAS_SEED_MAX:
             seed = seed % (ATLAS_SEED_MAX + 1)
         body["seed"] = int(seed)
+
+    # LoRA passthrough. Atlas's flux-dev-lora schema expects:
+    #     "loras": [{"path": "<hf-repo-slug>", "scale": <number>}]
+    # (up to 5 entries; we only support one via the flat lora_url/lora_scale
+    # fields on AtlasT2IParams). Non-LoRA-capable models on Atlas (FLUX dev,
+    # Schnell, Nano Banana, etc.) reject unknown keys, so only forward when
+    # the model id contains "lora".
+    lora_url = (params.get("lora_url") or "").strip()
+    if lora_url and "lora" in (model.atlas_model_id or "").lower():
+        lora_scale = float(params.get("lora_scale", 1.0))
+        body["loras"] = [{"path": lora_url, "scale": lora_scale}]
+
     return body
 
 
