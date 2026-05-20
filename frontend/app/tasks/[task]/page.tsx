@@ -88,6 +88,62 @@ function modelAcceptsLora(model: ModelEntry | null): boolean {
   return id.includes("lora");
 }
 
+/**
+ * Curated FLUX LoRAs hosted on HuggingFace. Each is a one-click preset that
+ * fills the lora_url input; users can still type any HF slug they want.
+ * To add a new preset: drop in a row with a short user-facing label, the
+ * full vendor/repo slug, and a one-line description that surfaces as the
+ * chip's title (tooltip).
+ */
+type LoraPreset = {
+  label: string;
+  slug: string;
+  description: string;
+};
+
+const LORA_PRESETS: LoraPreset[] = [
+  {
+    label: "Realism",
+    slug: "strangerzonehf/Flux-Super-Realism-LoRA",
+    description: "Hyperrealism / photoreal portraits. Atlas's own example.",
+  },
+  {
+    label: "XLabs Realism",
+    slug: "XLabs-AI/flux-RealismLora",
+    description: "XLabs's realism aesthetic. Different vibe from Stranger Zone.",
+  },
+  {
+    label: "Kodak Film",
+    slug: "alvdansen/flux-koda",
+    description: "Vintage Kodak film stock look. Warm tones, grain.",
+  },
+  {
+    label: "Anime",
+    slug: "prithivMLmods/Canopus-LoRA-Flux-Anime",
+    description: "Anime / manga style. Strong line art.",
+  },
+  {
+    label: "Tarot",
+    slug: "multimodalart/flux-tarot-v1",
+    description: "Tarot-card illustration style. Ornate borders, symbolism.",
+  },
+  {
+    label: "Children's sketch",
+    slug: "Shakker-Labs/FLUX.1-dev-LoRA-Children-Simple-Sketch",
+    description: "Children's book illustration. Soft lines, watercolor-ish.",
+  },
+  {
+    label: "90s anime",
+    slug: "glif/90s-anime-art",
+    description: "90s-era anime cel art. Limited palette, retro feel.",
+  },
+  {
+    label: "Pixar",
+    slug: "prithivMLmods/Canopus-Pixar-Art",
+    description: "Pixar / 3D animation style. Stylized characters.",
+  },
+];
+
 export default function TaskPage() {
   const router = useRouter();
   const params = useParams<{ task: string }>();
@@ -551,10 +607,55 @@ export default function TaskPage() {
                       setForm((p) => ({ ...p, lora_url: e.target.value }))
                     }
                   />
-                  <p className="text-xs text-muted-foreground">
-                    HuggingFace repo slug (vendor/name). Atlas does NOT
-                    accept .safetensors URLs - it must be an HF slug.
-                  </p>
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-muted-foreground">
+                      Quick picks (click to fill; you can also paste any HF
+                      slug above):
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {LORA_PRESETS.map((preset) => {
+                        const isActive =
+                          form.lora_url.trim().toLowerCase() ===
+                          preset.slug.toLowerCase();
+                        return (
+                          <button
+                            key={preset.slug}
+                            type="button"
+                            onClick={() =>
+                              setForm((p) => ({
+                                ...p,
+                                lora_url: preset.slug,
+                              }))
+                            }
+                            title={`${preset.slug} — ${preset.description}`}
+                            className={
+                              isActive
+                                ? "rounded-full border border-primary bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary"
+                                : "rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground transition-colors"
+                            }
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                      {form.lora_url.trim() && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForm((p) => ({ ...p, lora_url: "" }))
+                          }
+                          title="Clear LoRA"
+                          className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:border-destructive/60 hover:text-destructive transition-colors"
+                        >
+                          ✕ Clear
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Atlas does NOT accept .safetensors URLs — must be an
+                      HF repo slug (vendor/name).
+                    </p>
+                  </div>
                 </div>
                 <NumberSlider
                   label="LoRA strength"
