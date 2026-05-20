@@ -64,6 +64,12 @@ class ModelEntry(BaseModel):
     # I2I-only: max number of reference images the model accepts in one call.
     # None means "n/a" (T2I) or "unlimited / not a meaningful constraint".
     max_ref_images: int | None = None
+    # I2I-only: minimum size (shortest side) the model accepts for reference
+    # images, in pixels. None = unknown / no documented limit. Used by the
+    # frontend to pre-flight-validate uploads before they hit the model.
+    # Values come from observed Atlas error messages, not public docs (which
+    # don't surface this). Bump when a new model reports a different limit.
+    min_image_dim: int | None = None
     # Human label for the picker row, e.g. "OpenAI · Atlas",
     # "Black Forest Labs · Atlas", "Local · FLUX.1 dev".
     provider_label: str = ""
@@ -152,6 +158,7 @@ REGISTRY: dict[str, ModelEntry] = {
         best_for="instruction edits, multi-ref composition",
         price_per_image_usd=0.03,
         max_ref_images=3,
+        min_image_dim=240,  # observed Wan 2.6 limit; 2.7 likely same family
         provider_label="Alibaba · Atlas",
     ),
     # ---- Wan 2.2 Animate via dedicated HTTP server -----------------------
@@ -448,6 +455,7 @@ REGISTRY: dict[str, ModelEntry] = {
         best_for="reference / older",
         price_per_image_usd=0.021,
         max_ref_images=4,
+        min_image_dim=240,  # same family as 2.6, likely same limit
         provider_label="Alibaba · Atlas",
     ),
     "atlas-wan-2-6-edit": ModelEntry(
@@ -466,6 +474,7 @@ REGISTRY: dict[str, ModelEntry] = {
         best_for="general edits, multi-ref",
         price_per_image_usd=0.021,
         max_ref_images=4,
+        min_image_dim=240,  # observed in Atlas error: "must be in [240, 8000]"
         provider_label="Alibaba · Atlas",
     ),
     "atlas-grok-imagine-edit": ModelEntry(

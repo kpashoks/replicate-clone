@@ -3,16 +3,34 @@
 
 export type OutputKind = "image" | "video";
 
+export type Task = "t2i" | "i2i" | "video-swap";
+
+export type Provider = "runpod" | "wan-animate-http" | "atlas";
+
+export type SpeedBucket = "fast" | "medium" | "slow";
+
 export type ModelEntry = {
   slug: string;
   label: string;
   description: string;
-  workflow_file: string;
+  workflow_file: string | null;
+  atlas_model_id: string | null;
   output_kind: OutputKind;
+  provider: Provider;
   accepts_image: boolean;
   accepts_video: boolean;
   stage: number;
   available: boolean;
+
+  // Picker metadata (Phase 1)
+  task: Task;
+  nsfw: boolean;
+  speed: SpeedBucket;
+  best_for: string;
+  price_per_image_usd: number | null;
+  max_ref_images: number | null;
+  min_image_dim: number | null;
+  provider_label: string;
 };
 
 export type JobStatus =
@@ -64,3 +82,58 @@ export const TERMINAL_STATUSES: ReadonlySet<JobStatus> = new Set([
   "failed",
   "cancelled",
 ]);
+
+// ---- Task-level UI helpers --------------------------------------------
+
+export const TASK_META: Record<
+  Task,
+  { label: string; description: string; slug: Task }
+> = {
+  t2i: {
+    slug: "t2i",
+    label: "Text to Image",
+    description: "Generate an image from a text prompt.",
+  },
+  i2i: {
+    slug: "i2i",
+    label: "Image Edit",
+    description: "Edit or transform an uploaded image with a text prompt.",
+  },
+  "video-swap": {
+    slug: "video-swap",
+    label: "Character Swap (Video)",
+    description: "Replace a character in a video with a reference image.",
+  },
+};
+
+export function groupByTask(models: ModelEntry[]): Record<Task, ModelEntry[]> {
+  const out: Record<Task, ModelEntry[]> = {
+    t2i: [],
+    i2i: [],
+    "video-swap": [],
+  };
+  for (const m of models) out[m.task].push(m);
+  return out;
+}
+
+/** Pick a sensible default model for a task: first SFW + available, else first available, else first. */
+export function pickDefaultModel(
+  models: ModelEntry[],
+): ModelEntry | null {
+  if (models.length === 0) return null;
+  return (
+    models.find((m) => !m.nsfw && m.available) ||
+    models.find((m) => m.available) ||
+    models[0]
+  );
+}
+
+export function formatPrice(usd: number | null): string {
+  if (usd === null) return "Self-hosted";
+  if (usd < 0.01) return `$${usd.toFixed(3)}/img`;
+  return `$${usd.toFixed(2)}/img`;
+}
+
+export function speedLabel(s: SpeedBucket): string {
+  return s === "fast" ? "Fast" : s === "medium" ? "Medium" : "Slow";
+}

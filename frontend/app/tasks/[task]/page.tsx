@@ -235,6 +235,19 @@ export default function TaskPage() {
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [enhanceOpen, setEnhanceOpen] = useState(false);
 
+  // Aggregate pre-flight image-dimension validation across both dropzones.
+  // Either dropzone can flip this true if it detects an uploaded image
+  // below the selected model's min_image_dim. We block Run until clean.
+  const [multiInvalidDim, setMultiInvalidDim] = useState(false);
+  const [singleInvalidDim, setSingleInvalidDim] = useState(false);
+  const hasInvalidImageDim = multiInvalidDim || singleInvalidDim;
+  // Reset both when switching models (the new model might have a
+  // different min_image_dim or none at all -- recompute from a clean slate).
+  useEffect(() => {
+    setMultiInvalidDim(false);
+    setSingleInvalidDim(false);
+  }, [selectedModel?.slug]);
+
   // ---- polling --------------------------------------------------------
   const [elapsedSec, setElapsedSec] = useState(0);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -448,6 +461,8 @@ export default function TaskPage() {
                 max={maxRefs}
                 label={`Reference images (up to ${maxRefs})`}
                 onChange={(ups) => setImageUploads(ups)}
+                minDim={selectedModel?.min_image_dim ?? undefined}
+                onValidationChange={setMultiInvalidDim}
               />
             )}
 
@@ -468,6 +483,11 @@ export default function TaskPage() {
                         return next;
                       })
                     }
+                    minDim={selectedModel?.min_image_dim ?? undefined}
+                    // Slot 0 / slot 1 each report independently; OR them
+                    // together via the same singleInvalidDim flag - any
+                    // bad slot blocks Run.
+                    onValidationChange={setSingleInvalidDim}
                   />
                 ))}
               </div>
@@ -733,7 +753,8 @@ export default function TaskPage() {
                 !!isRunning ||
                 !form.prompt.trim() ||
                 !requiredUploadsMet ||
-                !selectedModel?.available
+                !selectedModel?.available ||
+                hasInvalidImageDim
               }
               className="w-full"
               size="lg"
@@ -746,7 +767,9 @@ export default function TaskPage() {
                     ? "Coming soon"
                     : !requiredUploadsMet
                       ? "Upload required inputs"
-                      : "Run"}
+                      : hasInvalidImageDim
+                        ? "Fix undersized image(s) first"
+                        : "Run"}
             </Button>
 
             {submitError && (

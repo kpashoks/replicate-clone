@@ -182,3 +182,27 @@ export function fileUrl(path: string): string {
   if (!path.startsWith("/")) path = "/" + path;
   return `${API_BASE}${path}`;
 }
+
+/** Read an image File's natural pixel dimensions without uploading it.
+ *  Resolves with {width, height} once the browser has decoded the image
+ *  header, or rejects on a decode error (corrupt / unsupported format).
+ *  Used for pre-flight validation against a model's min_image_dim. */
+export async function readImageDimensions(
+  file: File,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      URL.revokeObjectURL(url);
+      resolve({ width: w, height: h });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not decode image (corrupt or unsupported format)"));
+    };
+    img.src = url;
+  });
+}
