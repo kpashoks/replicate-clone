@@ -69,6 +69,15 @@ class JobRegistry:
         with self._lock:
             return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
 
+    def delete(self, job_id: str) -> bool:
+        """Remove a job from the in-memory registry. Returns True if a job
+        was actually present and removed. Does NOT touch on-disk files;
+        callers handle data/outputs/<id>/ + data/jobs/<id>.json cleanup
+        separately (see routes/generate.py:delete_job).
+        """
+        with self._lock:
+            return self._jobs.pop(job_id, None) is not None
+
     def _persist(self, job: Job) -> None:
         path = storage.jobs_dir() / f"{job.id}.json"
         try:

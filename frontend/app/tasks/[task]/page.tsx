@@ -32,12 +32,14 @@ import { Textarea } from "@/components/ui/textarea";
 
 import {
   cancelJob,
+  deleteJob,
   fetchModels,
   fileUrl,
   getJob,
   getSettings,
   saveJobOutput,
   submitJob,
+  type DeleteResponse,
   type UploadResponse,
 } from "@/lib/api";
 import {
@@ -773,6 +775,18 @@ export default function TaskPage() {
                   job={currentJob}
                   elapsedSec={elapsedSec}
                   onCancel={onCancel}
+                  isAtlasJob={
+                    selectedModel?.provider_label
+                      ?.toLowerCase()
+                      .includes("atlas") ?? false
+                  }
+                  onAfterDelete={() => {
+                    // Clear the panel state - the job is gone from
+                    // server-side, and there's nothing useful to show.
+                    stopTimers();
+                    setCurrentJob(null);
+                    setSubmitError(null);
+                  }}
                 />
 
                 {outputUrl && !outputIsVideo && (
@@ -930,53 +944,178 @@ function StatusPanel({
   job,
   elapsedSec,
   onCancel,
+  isAtlasJob,
+  onAfterDelete,
 }: {
   job: Job;
   elapsedSec: number;
   onCancel: () => void;
+  /** True when the job's model is hosted on Atlas Cloud; the delete
+   *  confirm dialog calls out that Atlas will also be asked to delete. */
+  isAtlasJob: boolean;
+  /** Called after a successful delete so the parent can clear the
+   *  StatusPanel/output state. Receives the backend's DeleteResponse. */
+  onAfterDelete: (result: DeleteResponse) => void;
 }) {
   const isRunning = !TERMINAL_STATUSES.has(job.status);
+  const isTerminal = !isRunning;
   const elapsed = isRunning
     ? elapsedSec
     : Math.max(0, Math.floor(job.updated_at - job.created_at));
   const mm = Math.floor(elapsed / 60).toString().padStart(2, "0");
   const ss = (elapsed % 60).toString().padStart(2, "0");
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
   return (
-    <div className="rounded-md border border-border p-3 space-y-1.5 text-sm">
-      <div className="flex justify-between gap-2">
-        <span className="text-muted-foreground">Status</span>
-        <StatusBadge status={job.status} />
-      </div>
-      {job.runpod_status && (
+    <>
+      <div className="rounded-md border border-border p-3 space-y-1.5 text-sm">
         <div className="flex justify-between gap-2">
-          <span className="text-muted-foreground">RunPod</span>
-          <span className="font-mono text-xs">{job.runpod_status}</span>
+          <span className="text-muted-foreground">Status</span>
+          <StatusBadge status={job.status} />
         </div>
-      )}
-      <div className="flex justify-between gap-2">
-        <span className="text-muted-foreground">Elapsed</span>
-        <span className="font-mono">
-          {mm}:{ss}
-        </span>
+        {job.runpod_status && (
+          <div className="flex justify-between gap-2">
+            <span className="text-muted-foreground">RunPod</span>
+            <span className="font-mono text-xs">{job.runpod_status}</span>
+          </div>
+        )}
+        <div className="flex justify-between gap-2">
+          <span className="text-muted-foreground">Elapsed</span>
+          <span className="font-mono">
+            {mm}:{ss}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-muted-foreground">Job ID</span>
+          <span className="font-mono text-xs">{job.id}</span>
+        </div>
+        {isRunning && (
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              className="w-full"
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+        {isTerminal && (
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteOpen(true)}
+              className="w-full"
+              title={
+                isAtlasJob
+                  ? "Delete local files AND request deletion from Atlas Cloud"
+                  : "Delete local files for this job"
+              }
+            >
+              🗑 Delete job
+            </Button>
+          </div>
+        )}
       </div>
-      <div className="flex justify-between gap-2">
-        <span className="text-muted-foreground">Job ID</span>
-        <span className="font-mono text-xs">{job.id}</span>
-      </div>
-      {isRunning && (
-        <div className="pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCancel}
-            className="w-full"
+      <DeleteConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        jobId={job.id}
+        isAtlasJob={isAtlasJob}
+        onDeleted={onAfterDelete}
+      />
+    </>
+  );
+}
+
+function DeleteConfirmDialog({
+  open,
+  onClose,
+  jobId,
+  isAtlasJob,
+  onDeleted,
+}: {
+  open: boolean;
+  onClose: () => void;
+  jobId: string;
+  isAtlasJob: boolean;
+  onDeleted: (result: DeleteResponse) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setBusy(false);
+      setError(null);
+    }
+  }, [open]);
+
+  const onConfirm = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await deleteJob(jobId);
+      // Close BEFORE firing the callback so the parent can safely null
+      // currentJob (which would otherwise unmount the dialog mid-render).
+      onClose();
+      onDeleted(result);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && !busy && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete this job?</DialogTitle>
+          <DialogDescription>
+            {isAtlasJob ? (
+              <>
+                This removes the local files (
+                <code>data/outputs/{jobId}/</code>,{" "}
+                <code>data/jobs/{jobId}.json</code>) AND requests deletion
+                of the prediction on Atlas Cloud&apos;s servers. Local
+                source uploads in <code>data/inputs/</code> are kept
+                (they may be shared across jobs).
+              </>
+            ) : (
+              <>
+                This removes the local files for this job (
+                <code>data/outputs/{jobId}/</code>,{" "}
+                <code>data/jobs/{jobId}.json</code>). Source uploads
+                in <code>data/inputs/</code> are kept (they may be
+                shared across jobs).
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        {error && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
+        <DialogFooter>
+          <DialogClose
+            render={<Button variant="outline" disabled={busy} />}
           >
             Cancel
+          </DialogClose>
+          <Button
+            variant="destructive"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Deleting…" : "Delete"}
           </Button>
-        </div>
-      )}
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

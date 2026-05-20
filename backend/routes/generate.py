@@ -342,6 +342,99 @@ async def list_jobs() -> list[JobView]:
     return [_to_view(j) for j in jobs.registry.list()]
 
 
+class DeleteResponse(BaseModel):
+    job_id: str
+    local_deleted: bool
+    atlas_deleted: bool
+    atlas_message: str | None = None
+
+
+@router.delete("/jobs/{job_id}", response_model=DeleteResponse)
+async def delete_job(job_id: str) -> DeleteResponse:
+    """Remove a job's local artifacts AND, for Atlas-provider jobs, also
+    delete the prediction from Atlas's dashboard.
+
+    Local deletion covers:
+      - data/outputs/<job_id>/  (the entire output directory)
+      - data/jobs/<job_id>.json (the persisted job snapshot)
+      - the in-memory job registry entry
+
+    We deliberately do NOT delete data/inputs/ entries here: those are
+    content-addressed by sha256 and may be shared across multiple jobs.
+    Orphan-input cleanup is a separate concern.
+
+    Atlas deletion (when applicable) hits the console.atlascloud.ai
+    `/api/v1/model/history/{id}` DELETE endpoint with the same API key
+    we use for submit/poll. If Atlas fails (network error, auth issue,
+    etc.), we still proceed with local deletion -- partial cleanup is
+    better than blocking the user. The response surfaces both flags so
+    the UI can show a clear status.
+
+    Atlas's documented public API has no DELETE endpoint; this uses the
+    dashboard's internal API, confirmed working with the same Bearer
+    auth via reverse-engineering of the dashboard's network requests.
+    """
+    j = jobs.registry.get(job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # ---- Atlas deletion (best-effort) ----
+    atlas_deleted = False
+    atlas_message: str | None = None
+    model = models_registry.REGISTRY.get(j.slug)
+    is_atlas_job = model is not None and model.provider == "atlas"
+    if is_atlas_job and j.runpod_request_id:
+        # j.runpod_request_id is reused to store the Atlas prediction id
+        # for atlas-provider jobs (see jobs.py:_run_atlas_job).
+        try:
+            from providers.atlas_client import AtlasClient, AtlasError
+            client = AtlasClient()
+            result = await client.delete_prediction(j.runpod_request_id)
+            atlas_deleted = True
+            if result.get("already_absent"):
+                atlas_message = "Already absent on Atlas (404)"
+        except AtlasError as e:
+            atlas_message = f"Atlas delete failed: {e}"
+        except Exception as e:  # noqa: BLE001 - never block local cleanup
+            atlas_message = f"Atlas delete error: {type(e).__name__}: {e}"
+    elif is_atlas_job and not j.runpod_request_id:
+        atlas_message = "Atlas job has no prediction id (never submitted?)"
+
+    # ---- Local deletion ----
+    local_deleted = False
+    try:
+        # Output directory: data/outputs/<job_id>/
+        output_dir = settings.data_dir_abs / "outputs" / job_id
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=False)
+
+        # Job snapshot: data/jobs/<job_id>.json
+        snapshot = settings.data_dir_abs / "jobs" / f"{job_id}.json"
+        if snapshot.exists():
+            snapshot.unlink()
+
+        # In-memory registry
+        jobs.registry.delete(job_id)
+
+        local_deleted = True
+    except (OSError, PermissionError) as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Local deletion failed for job {job_id}: {e}. "
+                f"Atlas deletion was: "
+                f"{'succeeded' if atlas_deleted else atlas_message or 'not attempted'}."
+            ),
+        )
+
+    return DeleteResponse(
+        job_id=job_id,
+        local_deleted=local_deleted,
+        atlas_deleted=atlas_deleted,
+        atlas_message=atlas_message,
+    )
+
+
 @router.post("/jobs/{job_id}/cancel", response_model=JobView)
 async def cancel_job(job_id: str) -> JobView:
     j = jobs.registry.get(job_id)

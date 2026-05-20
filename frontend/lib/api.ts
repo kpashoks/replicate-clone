@@ -131,6 +131,20 @@ export async function cancelJob(jobId: string): Promise<Job> {
   return jsonOrThrow<Job>(res);
 }
 
+export type DeleteResponse = {
+  job_id: string;
+  local_deleted: boolean;
+  atlas_deleted: boolean;
+  atlas_message: string | null;
+};
+
+export async function deleteJob(jobId: string): Promise<DeleteResponse> {
+  const res = await fetch(`${API_BASE}/api/jobs/${jobId}`, {
+    method: "DELETE",
+  });
+  return jsonOrThrow<DeleteResponse>(res);
+}
+
 export type SaveResponse = {
   saved_path: string;
   filename: string;
