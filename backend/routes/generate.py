@@ -209,6 +209,7 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-wan-2-6-edit": AtlasI2IParams,
     "atlas-grok-imagine-edit": AtlasI2IParams,
     "atlas-wan-2-7-edit": AtlasI2IParams,
+    "atlas-wan-2-5-edit": AtlasI2IParams,
     "atlas-flux-kontext-dev-lora": AtlasI2IParams,
 }
 
@@ -238,6 +239,7 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-wan-2-6-edit": 1,
     "atlas-grok-imagine-edit": 1,
     "atlas-wan-2-7-edit": 1,
+    "atlas-wan-2-5-edit": 1,
     "atlas-flux-kontext-dev-lora": 1,
 }
 
