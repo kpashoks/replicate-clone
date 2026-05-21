@@ -219,7 +219,9 @@ pip install --no-cache-dir --quiet \
     'decord' 'moviepy' 'librosa' 'soundfile' 'scipy' \
     'peft' \
     'loguru' \
-    'onnxruntime-gpu>=1.16'
+    'onnxruntime-gpu>=1.16' \
+    'matplotlib' \
+    'scikit-image'
 log "  Done."
 log ""
 
