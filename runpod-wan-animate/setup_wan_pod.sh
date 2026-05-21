@@ -217,7 +217,9 @@ pip install --no-cache-dir --quiet \
     'filelock' 'psutil' 'packaging' \
     'einops' 'omegaconf' \
     'decord' 'moviepy' 'librosa' 'soundfile' 'scipy' \
-    'peft'
+    'peft' \
+    'loguru' \
+    'onnxruntime-gpu>=1.16'
 log "  Done."
 log ""
 
