@@ -100,6 +100,18 @@ def _input_names_for_slug(slug: str, input_ids: list[str]) -> list[str]:
     """
     if slug == "character-swap":
         return ["user_input_video.mp4", "user_input_character.png"][: len(input_ids)]
+    # Atlas video-swap models: same input ordering as the self-hosted variant
+    # (video first, character image second). The dispatcher reads input_ids
+    # in order and pushes them into the model-specific atlas_video_field /
+    # atlas_image_field; the local filenames don't matter for Atlas upload
+    # (we just need stable extensions for content-type detection).
+    if slug in (
+        "atlas-kling-motion-std",
+        "atlas-kling-motion-pro",
+        "atlas-wan-2-7-ref-video",
+        "atlas-seedance-2-ref-video",
+    ):
+        return ["user_input_video.mp4", "user_input_character.png"][: len(input_ids)]
     # default: first input gets the canonical image name, rest are numbered
     return [
         "user_input.png" if i == 0 else f"user_input_{i}.png"
@@ -596,13 +608,30 @@ async def _run_atlas_job(
     # ---- Build request body --------------------------------------------
     body = _build_atlas_image_body(model, params)
 
-    # Attach reference images if this is an I2I slug. Per Atlas's playground
-    # examples (GPT Image 2 Edit, Wan 2.6 Image Edit, etc.), all I2I models
-    # take `images: [<https url>, ...]` as a top-level array — even for
-    # single-image vendors. Atlas rejects data: URLs, so each input file is
-    # uploaded to Atlas's media bucket first and the returned
-    # storage.atlascloud.ai URL is what we put into the body.
-    if model.accepts_image and input_ids:
+    # Attach uploaded inputs. There are two body shapes depending on the
+    # model's task:
+    #
+    # (A) i2i / image-edit models — Atlas convention is
+    #     `<atlas_images_param>: [<url>, ...]` as a single array of all
+    #     reference image URLs. Used by GPT Image 2 Edit, Wan 2.6 Image
+    #     Edit, Nano Banana 2, Qwen Edit Plus, Grok Imagine Edit, etc.
+    #
+    # (B) video-swap / motion-control / reference-to-video models — these
+    #     take a SEPARATE source video + reference character image, with
+    #     distinct field names. The schemas vary per vendor (probed live):
+    #         Kling Motion Control: video="<url>", image="<url>" (singular)
+    #         Seedance 2.0 R2V:     video="<url>", image="<url>" (singular)
+    #         Wan 2.7 R2V:          videos=["<url>"], images=["<url>"] (arrays)
+    #     The per-model field names live in atlas_video_field /
+    #     atlas_image_field, and atlas_video_uses_arrays decides whether
+    #     each URL is wrapped in [list] or sent bare.
+    #
+    # Atlas rejects data: URLs, so every input file is uploaded to Atlas's
+    # media bucket first; the returned storage.atlascloud.ai URL goes into
+    # the body.
+    is_video_swap = model.task == "video-swap" and bool(model.atlas_video_field)
+
+    if (model.accepts_image or is_video_swap) and input_ids:
         atlas_urls: list[str] = []
         for input_id in input_ids:
             try:
@@ -618,7 +647,20 @@ async def _run_atlas_job(
                 registry.update(job_id, status="failed", error=f"atlas upload {input_id}: {e}")
                 return
             atlas_urls.append(url)
-        body[model.atlas_images_param] = atlas_urls
+
+        if is_video_swap:
+            # Convention from _input_names_for_slug: input[0] = source
+            # video, input[1] = reference character image. Both are
+            # required (_MIN_INPUT_IDS enforces 2), but we defend
+            # against shorter lists just in case.
+            if len(atlas_urls) >= 1:
+                v = atlas_urls[0]
+                body[model.atlas_video_field] = [v] if model.atlas_video_uses_arrays else v
+            if len(atlas_urls) >= 2:
+                i = atlas_urls[1]
+                body[model.atlas_image_field] = [i] if model.atlas_video_uses_arrays else i
+        else:
+            body[model.atlas_images_param] = atlas_urls
 
     # ---- Submit --------------------------------------------------------
     try:

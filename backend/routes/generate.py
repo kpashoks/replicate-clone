@@ -184,6 +184,17 @@ class AtlasI2IParams(BaseModel):
     )
 
 
+class AtlasVideoSwapParams(BaseModel):
+    """Schema for Atlas video-swap / motion-control / reference-to-video
+    models. They all take a source motion video + a reference character
+    image (via the dispatcher's upload step), plus an optional prompt and
+    seed. Per-model body shape (singular vs array, field name) lives in
+    ModelEntry.atlas_video_field / atlas_image_field, not here.
+    """
+    prompt: str = Field("", max_length=2000)
+    seed: int = Field(-1, description="-1 means random")
+
+
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "juggernaut-xl": JuggernautParams,
@@ -211,6 +222,13 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-wan-2-7-edit": AtlasI2IParams,
     "atlas-wan-2-5-edit": AtlasI2IParams,
     "atlas-flux-kontext-dev-lora": AtlasI2IParams,
+    # Atlas video-swap (character-swap / motion-control / reference-to-video).
+    # All four share the same param schema -- the dispatcher uses per-model
+    # ModelEntry.atlas_video_field / atlas_image_field to assemble the body.
+    "atlas-kling-motion-std": AtlasVideoSwapParams,
+    "atlas-kling-motion-pro": AtlasVideoSwapParams,
+    "atlas-wan-2-7-ref-video": AtlasVideoSwapParams,
+    "atlas-seedance-2-ref-video": AtlasVideoSwapParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -241,6 +259,11 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-wan-2-7-edit": 1,
     "atlas-wan-2-5-edit": 1,
     "atlas-flux-kontext-dev-lora": 1,
+    # Atlas video-swap: source video + reference character image (in that order).
+    "atlas-kling-motion-std": 2,
+    "atlas-kling-motion-pro": 2,
+    "atlas-wan-2-7-ref-video": 2,
+    "atlas-seedance-2-ref-video": 2,
 }
 
 

@@ -46,6 +46,24 @@ class ModelEntry(BaseModel):
     # per-slug only when the playground example shows something other than
     # "images".
     atlas_images_param: str = "images"
+
+    # Atlas video-swap (character-swap-via-video) only: body keys for the
+    # source motion video and the reference character image. These models
+    # accept a video + image pair, not just a list of images, so the i2i
+    # `atlas_images_param` array convention doesn't apply. Empty strings
+    # mean "not a video-swap model" -- the dispatcher falls back to the
+    # i2i path.
+    #
+    # Known schemas (probed live against Atlas 2026-05):
+    #   Kling Motion Control:     atlas_video_field="video", atlas_image_field="image"
+    #   Seedance 2.0 R2V:         atlas_video_field="video", atlas_image_field="image"
+    #   Wan 2.7 Reference-to-Video: atlas_video_field="videos", atlas_image_field="images" (arrays)
+    atlas_video_field: str = ""
+    atlas_image_field: str = ""
+    # When True, wrap each URL in a single-element list before assigning to
+    # the field. Some Atlas models (Wan 2.7 R2V) want `videos: [...]` even
+    # for a single video; others (Kling, Seedance) want `video: "<url>"`.
+    atlas_video_uses_arrays: bool = False
     accepts_image: bool = False
     accepts_video: bool = False
     stage: int = 1
@@ -166,8 +184,8 @@ REGISTRY: dict[str, ModelEntry] = {
     # server that mirrors Replicate's wan-2.2-animate-replace pipeline.
     "character-swap": ModelEntry(
         slug="character-swap",
-        label="Character Swap (Video)",
-        description="Replace one character in a 5-10s video with a reference character image, using Wan 2.2 Animate. Runs on a dedicated inference server (not the main ComfyUI worker).",
+        label="Wan 2.2 Animate (Self-hosted)",
+        description="Replace one character in a 5-10s video with a reference character image, using Wan 2.2 Animate. Runs on a dedicated self-hosted inference Pod. NSFW-OK but requires keeping the Pod running. Use only when an Atlas-hosted alternative isn't appropriate.",
         provider="wan-animate-http",
         workflow_file=None,
         output_kind="video",
@@ -178,10 +196,104 @@ REGISTRY: dict[str, ModelEntry] = {
         task="video-swap",
         nsfw=True,
         speed="slow",
-        best_for="video character swap",
+        best_for="NSFW character swap",
         price_per_image_usd=None,
         max_ref_images=1,
         provider_label="Local · Wan 2.2 Animate",
+    ),
+
+    # ---- Atlas Cloud: character-swap / motion-control video models -------
+    # Atlas-hosted alternatives to the self-hosted Wan 2.2 Animate Pod. No
+    # Pod lifecycle to manage; pay per output. Content-moderated -- Atlas
+    # ranges from permissive (Wan/Seedance) to strict (Kling) by vendor
+    # policy. NSFW work should still go through the self-hosted Pod.
+    "atlas-kling-motion-std": ModelEntry(
+        slug="atlas-kling-motion-std",
+        label="Kling Motion Control Std (Atlas)",
+        description="Kling 2.6 Standard Motion Control. Take a character image + a motion video, get out the character performing that motion. The cheapest hosted character-swap option. Kuaishou's model; SFW-leaning content policy.",
+        provider="atlas",
+        atlas_model_id="kwaivgi/kling-v2.6-std/motion-control",
+        atlas_video_field="video",
+        atlas_image_field="image",
+        atlas_video_uses_arrays=False,
+        output_kind="video",
+        accepts_image=True,
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="video-swap",
+        nsfw=False,
+        speed="medium",
+        best_for="cheap hosted character swap",
+        price_per_image_usd=0.060,
+        max_ref_images=1,
+        provider_label="Kuaishou · Atlas",
+    ),
+    "atlas-kling-motion-pro": ModelEntry(
+        slug="atlas-kling-motion-pro",
+        label="Kling Motion Control Pro (Atlas)",
+        description="Kling 2.6 Pro Motion Control. Higher fidelity than the Std tier at ~60% the cost. Same input shape: character image + motion video. SFW-leaning content policy.",
+        provider="atlas",
+        atlas_model_id="kwaivgi/kling-v2.6-pro/motion-control",
+        atlas_video_field="video",
+        atlas_image_field="image",
+        atlas_video_uses_arrays=False,
+        output_kind="video",
+        accepts_image=True,
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="video-swap",
+        nsfw=False,
+        speed="medium",
+        best_for="quality hosted character swap",
+        price_per_image_usd=0.095,
+        max_ref_images=1,
+        provider_label="Kuaishou · Atlas",
+    ),
+    "atlas-wan-2-7-ref-video": ModelEntry(
+        slug="atlas-wan-2-7-ref-video",
+        label="Wan 2.7 Reference-to-Video (Atlas)",
+        description="Alibaba's Wan 2.7 Reference-to-Video. Successor to Wan 2.2 Animate that handles multi-subject swap and voice-cloning natively. Most flexible character-swap option. NSFW policy is permissive at Atlas, though not as open as fully self-hosted.",
+        provider="atlas",
+        atlas_model_id="alibaba/wan-2.7/reference-to-video",
+        atlas_video_field="videos",
+        atlas_image_field="images",
+        atlas_video_uses_arrays=True,
+        output_kind="video",
+        accepts_image=True,
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="video-swap",
+        nsfw=True,
+        speed="medium",
+        best_for="multi-subject swap",
+        price_per_image_usd=0.100,
+        max_ref_images=1,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-seedance-2-ref-video": ModelEntry(
+        slug="atlas-seedance-2-ref-video",
+        label="Seedance 2.0 Reference-to-Video (Atlas)",
+        description="ByteDance Seedance 2.0 Reference-to-Video. Supports audio output (lipsync, sound effects) alongside the character swap. Different aesthetic from Wan / Kling; useful as a third option for comparison.",
+        provider="atlas",
+        atlas_model_id="bytedance/seedance-2.0/reference-to-video",
+        atlas_video_field="video",
+        atlas_image_field="image",
+        atlas_video_uses_arrays=False,
+        output_kind="video",
+        accepts_image=True,
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="video-swap",
+        nsfw=False,
+        speed="medium",
+        best_for="character swap + audio",
+        price_per_image_usd=0.096,
+        max_ref_images=1,
+        provider_label="ByteDance · Atlas",
     ),
 
     # ---- Atlas Cloud: SFW text-to-image ----------------------------------
