@@ -92,26 +92,45 @@ log "Verifying model weights on Network Volume..."
 #
 # Set WAN_CKPT_DIR_OVERRIDE if your model lives elsewhere on the volume.
 : "${WAN_CKPT_DIR_OVERRIDE:=/workspace/Wan2.2-Animate-14B}"
+# Entries marked "FILE" must be regular files; "DIR" must be directories.
+# vitpose_h_wholebody.onnx is genuinely a directory on Hugging Face -- the
+# model is stored as 394 external-data files inside it, not a single .onnx
+# proto.
 WEIGHTS=(
-    "${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00001-of-00004.safetensors"
-    "${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00002-of-00004.safetensors"
-    "${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00003-of-00004.safetensors"
-    "${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00004-of-00004.safetensors"
-    "${WAN_CKPT_DIR_OVERRIDE}/models_t5_umt5-xxl-enc-bf16.pth"
-    "${WAN_CKPT_DIR_OVERRIDE}/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"
-    "${WAN_CKPT_DIR_OVERRIDE}/Wan2.1_VAE.pth"
-    "${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/det/yolov10m.onnx"
-    "${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/pose2d/vitpose_h_wholebody.onnx"
-    "${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/sam2/sam2_hiera_large.pt"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00001-of-00004.safetensors"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00002-of-00004.safetensors"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00003-of-00004.safetensors"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/diffusion_pytorch_model-00004-of-00004.safetensors"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/models_t5_umt5-xxl-enc-bf16.pth"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/Wan2.1_VAE.pth"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/det/yolov10m.onnx"
+    "DIR|${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/pose2d/vitpose_h_wholebody.onnx"
+    "FILE|${WAN_CKPT_DIR_OVERRIDE}/process_checkpoint/sam2/sam2_hiera_large.pt"
 )
 missing=0
-for f in "${WEIGHTS[@]}"; do
-    if [ -f "$f" ]; then
-        size=$(du -h "$f" | cut -f1)
-        log "  OK: $f ($size)"
+for entry in "${WEIGHTS[@]}"; do
+    kind="${entry%%|*}"
+    path="${entry#*|}"
+    if [ "$kind" = "FILE" ]; then
+        if [ -f "$path" ]; then
+            size=$(du -h "$path" | cut -f1)
+            log "  OK: $path ($size)"
+        else
+            err "  MISSING (file): $path"
+            missing=$((missing + 1))
+        fi
     else
-        err "  MISSING: $f"
-        missing=$((missing + 1))
+        # DIR: must be a directory AND must contain at least one file
+        # (HuggingFace's vitpose layout is ~394 external-data tensors).
+        if [ -d "$path" ] && [ -n "$(ls -A "$path" 2>/dev/null)" ]; then
+            size=$(du -sh "$path" | cut -f1)
+            count=$(ls -1 "$path" | wc -l)
+            log "  OK: $path/ ($size, $count files)"
+        else
+            err "  MISSING (directory): $path/"
+            missing=$((missing + 1))
+        fi
     fi
 done
 if [ "$missing" -gt 0 ]; then
