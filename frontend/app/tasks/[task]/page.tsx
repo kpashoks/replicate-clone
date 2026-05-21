@@ -8,6 +8,7 @@ import { EnhanceDiff } from "@/components/EnhanceDiff";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModelPicker } from "@/components/ModelPicker";
 import { MultiImageDropzone } from "@/components/MultiImageDropzone";
+import { PodStatusBanner } from "@/components/PodStatusBanner";
 import { VideoDropzone } from "@/components/VideoDropzone";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -436,6 +437,14 @@ export default function TaskPage() {
                 </p>
               )}
             </div>
+
+            {/* ----- Self-hosted Pod health banner (character-swap only) -----
+                Surfaces "Pod is online" or a step-by-step restart reminder
+                when the user picks the self-hosted Wan 2.2 Animate model.
+                Atlas-hosted character-swap variants skip this entirely. */}
+            {selectedModel?.slug === "character-swap" && (
+              <PodStatusBanner />
+            )}
 
             {/* ----- video upload (video-swap only) ----- */}
             {task === "video-swap" && (

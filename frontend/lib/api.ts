@@ -177,6 +177,24 @@ export async function getSettings(): Promise<AppSettings> {
   return jsonOrThrow<AppSettings>(res);
 }
 
+export type WanAnimateHealth = {
+  status: "unconfigured" | "up" | "down" | "wrong_url";
+  endpoint: string;
+  error: string;
+  debug_info: Record<string, unknown> | null;
+};
+
+/** Probe the self-hosted wan-animate Pod. Returns quickly (~5s max).
+ *  Used by the PodStatusBanner shown when the user selects the
+ *  self-hosted character-swap model, so they get a "✓ online" badge or
+ *  a step-by-step restart-reminder card depending on Pod state. */
+export async function getWanAnimateHealth(): Promise<WanAnimateHealth> {
+  const res = await fetch(`${API_BASE}/api/wan-animate/health`, {
+    cache: "no-store",
+  });
+  return jsonOrThrow<WanAnimateHealth>(res);
+}
+
 /** Build an absolute URL for a server-served file path like "/api/files/outputs/<id>/<name>". */
 export function fileUrl(path: string): string {
   if (!path.startsWith("/")) path = "/" + path;

@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -645,3 +646,78 @@ async def get_settings() -> SettingsView:
     """
     d = settings.download_dir_abs
     return SettingsView(default_download_dir=str(d) if d else "")
+
+
+# =====================================================================
+# Wan-Animate Pod health probe.
+# Frontend pings this when the user selects the self-hosted character-swap
+# model so it can show a step-by-step "restart your Pod" reminder if the
+# Pod is unreachable.
+# =====================================================================
+
+
+class WanAnimateHealth(BaseModel):
+    # Status enum:
+    #   "unconfigured" - no WAN_ANIMATE_ENDPOINT set in .env
+    #   "up"           - Pod responded 200 to /debug/info
+    #   "down"         - connection failed / timeout / DNS error
+    #   "wrong_url"    - reached *something*, but /debug/info returned non-200
+    status: Literal["unconfigured", "up", "down", "wrong_url"]
+    endpoint: str = ""
+    error: str = ""
+    # When status="up", surface the Pod's reported torch / cuda / GPU info
+    # so the frontend can render a confirmation badge with detail.
+    debug_info: dict | None = None
+
+
+@router.get("/wan-animate/health", response_model=WanAnimateHealth)
+async def wan_animate_health() -> WanAnimateHealth:
+    """Probe the self-hosted wan-animate Pod's /debug/info endpoint.
+
+    Returns quickly (5s timeout) so the frontend's banner doesn't hang
+    waiting on a stopped Pod. The frontend caches this result -- we
+    don't loop here. Re-probing happens when the user re-selects the
+    self-hosted model or refreshes the page.
+    """
+    endpoint = (settings.WAN_ANIMATE_ENDPOINT or "").rstrip("/")
+    if not endpoint:
+        return WanAnimateHealth(
+            status="unconfigured",
+            error="WAN_ANIMATE_ENDPOINT is empty in .env.",
+        )
+
+    url = f"{endpoint}/debug/info"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(url)
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout,
+            httpx.RemoteProtocolError, httpx.ReadError) as e:
+        return WanAnimateHealth(
+            status="down",
+            endpoint=endpoint,
+            error=f"{type(e).__name__}: {e}",
+        )
+    except Exception as e:  # noqa: BLE001 - never let probe crash the call
+        return WanAnimateHealth(
+            status="down",
+            endpoint=endpoint,
+            error=f"{type(e).__name__}: {e}",
+        )
+
+    if r.status_code != 200:
+        return WanAnimateHealth(
+            status="wrong_url",
+            endpoint=endpoint,
+            error=f"HTTP {r.status_code} from /debug/info: {r.text[:200]}",
+        )
+
+    try:
+        info = r.json()
+    except ValueError:
+        info = {"raw": r.text[:500]}
+
+    return WanAnimateHealth(
+        status="up",
+        endpoint=endpoint,
+        debug_info=info,
+    )
