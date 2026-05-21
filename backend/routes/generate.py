@@ -532,16 +532,30 @@ async def save_job_output(job_id: str, body: SaveRequest) -> SaveResponse:
             ),
         )
 
-    # Resolve the source file. j.output_files entries are stored as the
-    # path the frontend uses ("outputs/<job_id>/<name>"), so reassemble
-    # into an absolute path under data_dir_abs.
-    rel = j.output_files[body.output_index]
+    # Resolve the source file. storage.write_output() stores output_files
+    # entries as the URL the frontend fetches, e.g.
+    #     /api/files/outputs/<job_id>/<name>
+    # The actual file on disk is at
+    #     <data_dir>/outputs/<job_id>/<name>
+    # so strip the "/api/files/" URL prefix to get the data-relative path.
+    # Tolerate both the URL form and a bare "outputs/<job_id>/<name>" form
+    # in case other code paths store it differently.
+    raw = j.output_files[body.output_index]
+    rel = raw.lstrip("/")
+    if rel.startswith("api/files/"):
+        rel = rel[len("api/files/"):]
     src = (settings.data_dir_abs / rel).resolve()
     # Path-traversal guard.
     try:
         src.relative_to(settings.data_dir_abs.resolve())
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid output path")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid output path: job output_files[{body.output_index}]="
+                f"{raw!r} resolved to {src} which is outside the data dir."
+            ),
+        )
     if not src.is_file():
         raise HTTPException(
             status_code=404, detail=f"Output file missing on disk: {rel}",
