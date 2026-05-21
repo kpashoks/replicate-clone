@@ -221,7 +221,8 @@ pip install --no-cache-dir --quiet \
     'loguru' \
     'onnxruntime-gpu>=1.16' \
     'matplotlib' \
-    'scikit-image'
+    'scikit-image' \
+    'pandas'
 log "  Done."
 log ""
 
