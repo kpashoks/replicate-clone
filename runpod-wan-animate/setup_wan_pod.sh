@@ -156,6 +156,41 @@ fi
 log ""
 
 # ============================================================================
+# 1b. Patch Wan-Video's preprocess module to make the FluxKontextPipeline
+#     import optional. We use `use_flux=False` so we never need it, but
+#     diffusers==0.31.0 (the pinned version we install below) doesn't have
+#     it -- the unconditional `from diffusers import FluxKontextPipeline`
+#     at module load time crashes WanAnimate construction otherwise.
+#
+#     Idempotent: re-running setup is safe; we detect already-patched
+#     files and skip.
+# ============================================================================
+log "Patching FluxKontextPipeline import to be optional..."
+python3 - <<'PYPATCH' || warn "Patch failed (maybe Wan moved that import upstream)"
+import os
+path = '/opt/wan22/wan/modules/animate/preprocess/process_pipepline.py'
+if not os.path.exists(path):
+    print(f"  SKIP: {path} not found")
+else:
+    with open(path) as f:
+        content = f.read()
+    old = 'from diffusers import FluxKontextPipeline'
+    new = ('try:\n'
+           '    from diffusers import FluxKontextPipeline\n'
+           'except ImportError:\n'
+           '    FluxKontextPipeline = None  # optional - needed only when use_flux=True')
+    if old in content:
+        with open(path, 'w') as f:
+            f.write(content.replace(old, new))
+        print("  OK: patched")
+    elif 'except ImportError' in content and 'FluxKontextPipeline' in content:
+        print("  SKIP: already patched")
+    else:
+        print("  WARN: import line not found - file may have changed upstream")
+PYPATCH
+log ""
+
+# ============================================================================
 # 2. Install Python dependencies — pinned to versions compatible with
 #    the pre-installed torch. This is the part that the Docker approach
 #    kept getting wrong (pip kept upgrading torch transitively).
