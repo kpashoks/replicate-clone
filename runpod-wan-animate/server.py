@@ -447,8 +447,23 @@ def _load_model() -> None:
     inside the running container will reveal the actual name.
     """
     global _wan_animate, _preprocess_pipeline, _sam2_predictor, _model_load_error
-    if _wan_animate is not None:
+    # Both objects must be loaded for inference. If a previous attempt
+    # got partway through (e.g. WanAnimate loaded but ProcessPipeline
+    # crashed on a deps issue), the next call should RETRY loading the
+    # missing one rather than early-return with a corrupt half-loaded
+    # state. Reset the WanAnimate handle too in that case so we re-init
+    # everything cleanly from scratch.
+    if _wan_animate is not None and _preprocess_pipeline is not None:
         return
+    if _wan_animate is not None and _preprocess_pipeline is None:
+        log.warning(
+            "Previous _load_model() finished WanAnimate but failed at "
+            "ProcessPipeline. Tearing down the partial state and re-trying "
+            "from scratch."
+        )
+        _wan_animate = None
+        _preprocess_pipeline = None
+        _model_load_error = None
 
     try:
         log.info("Loading Wan 2.2 Animate ...")
