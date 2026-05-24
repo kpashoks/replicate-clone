@@ -177,6 +177,42 @@ export async function getSettings(): Promise<AppSettings> {
   return jsonOrThrow<AppSettings>(res);
 }
 
+/** One dynamic form field, mirroring the simplified schema from the
+ *  /api/models/{slug}/schema endpoint. The frontend renders fields based
+ *  on the type + ui_component combination. */
+export type ParamSpec = {
+  name: string;
+  label: string;
+  description: string;
+  type: "string" | "integer" | "number" | "boolean" | "array";
+  default: unknown;
+  enum: unknown[] | null;
+  minimum: number | null;
+  maximum: number | null;
+  step: number | null;
+  ui_component: "" | "slider" | "select" | "textarea" | "uploaders";
+  required: boolean;
+};
+
+export type ModelSchemaResponse = {
+  provider: string;
+  /** null = no schema available; frontend falls back to hardcoded form. */
+  params: ParamSpec[] | null;
+};
+
+/** Fetch a model's parameter schema. Returns null params for non-Atlas
+ *  models or for the 3 Atlas models Atlas doesn't host schemas for
+ *  (flux-2-pro, imagen-4-ultra, ideogram-v3). The dynamic form is only
+ *  rendered when params is non-null. */
+export async function fetchModelSchema(
+  slug: string,
+): Promise<ModelSchemaResponse> {
+  const res = await fetch(`${API_BASE}/api/models/${slug}/schema`, {
+    cache: "no-store",
+  });
+  return jsonOrThrow<ModelSchemaResponse>(res);
+}
+
 export type WanAnimateHealth = {
   status: "unconfigured" | "up" | "down" | "wrong_url";
   endpoint: string;

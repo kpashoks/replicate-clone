@@ -569,20 +569,56 @@ def _build_atlas_image_body(model: ModelEntry, params: dict) -> dict:
         lora_scale = float(params.get("lora_scale", 1.0))
         body["loras"] = [{"path": lora_url, "scale": lora_scale}]
 
-    # Text-to-video knobs. Atlas's t2v models accept a permissive superset
-    # of these and ignore what they don't understand. Only forward when the
-    # model is actually a t2v model -- non-t2v models (especially older
-    # Atlas i2i ones) sometimes reject unknown keys at the Pydantic layer.
+    # Text-to-video legacy knobs from the old hardcoded form (kept for
+    # backwards-compat with jobs submitted before the dynamic-form rollout).
+    # These will be no-ops once the frontend always uses the dynamic form
+    # because that form sends params under their real Atlas names
+    # (e.g. "duration", not "duration_seconds"). Safe to leave in place.
     if model.task == "t2v":
         duration = params.get("duration_seconds")
-        if duration is not None:
+        if duration is not None and "duration" not in body:
             body["duration"] = int(duration)
-        resolution = params.get("resolution")
-        if resolution:
-            body["resolution"] = str(resolution)
-        aspect_ratio = params.get("aspect_ratio")
-        if aspect_ratio:
-            body["aspect_ratio"] = str(aspect_ratio)
+        # resolution and aspect_ratio are already the Atlas-native names,
+        # so they get forwarded by the generic loop below.
+
+    # Generic passthrough for any vendor-specific knob the dynamic form
+    # collected from the model's Atlas schema. Most of the variety lives
+    # here: cfg_scale, negative_prompt, enhance_prompt, motion_amount,
+    # num_inference_steps, watermark, ratio, num_images, n, etc.
+    #
+    # We deny-list keys that are either:
+    #   - Handled by specialized paths above/elsewhere
+    #     (prompt, seed, lora_url, lora_scale)
+    #   - Set server-side from the registry (model)
+    #   - Provided via the upload pipeline (image*, video*, mask_image,
+    #     reference_*)
+    #   - Internal app metadata not meant for Atlas
+    #     (download_dir, duration_seconds)
+    _ATLAS_PARAM_DENY = {
+        "prompt", "seed",
+        "lora_url", "lora_scale",
+        "model",
+        "image", "images", "image_urls",
+        "video", "videos",
+        "mask_image",
+        "reference_images", "reference_videos", "reference_audios",
+        "download_dir",
+        "duration_seconds",  # legacy name; we already converted above
+    }
+    for k, v in params.items():
+        if k in _ATLAS_PARAM_DENY:
+            continue
+        if k in body:
+            # Already set by a specialized branch above (e.g. duration
+            # converted from duration_seconds). Don't clobber.
+            continue
+        # Skip empty / sentinel values so we don't accidentally override
+        # a model's default with "" or null.
+        if v is None:
+            continue
+        if isinstance(v, str) and v == "":
+            continue
+        body[k] = v
 
     return body
 

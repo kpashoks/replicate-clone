@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { DynamicParamForm } from "@/components/DynamicParamForm";
 import { EnhanceDiff } from "@/components/EnhanceDiff";
 import { ImageDropzone } from "@/components/ImageDropzone";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -35,12 +36,14 @@ import {
   cancelJob,
   deleteJob,
   fetchModels,
+  fetchModelSchema,
   fileUrl,
   getJob,
   getSettings,
   saveJobOutput,
   submitJob,
   type DeleteResponse,
+  type ParamSpec,
   type UploadResponse,
 } from "@/lib/api";
 import {
@@ -189,6 +192,16 @@ export default function TaskPage() {
   // rename modal when the form field is empty.
   const [defaultDownloadDir, setDefaultDownloadDir] = useState<string>("");
 
+  // Per-selected-model parameter schema fetched from /api/models/{slug}/schema.
+  // null  = haven't fetched / not applicable / no schema available
+  // []    = Atlas model with schema but no exposed params
+  // [...] = Atlas model schema; render DynamicParamForm
+  const [modelParams, setModelParams] = useState<ParamSpec[] | null>(null);
+  // User-edited values for the dynamic form, keyed by Atlas param name.
+  // Reset when the selected model changes (different models have different
+  // schemas; carrying values across silently would submit nonsense).
+  const [dynamicValues, setDynamicValues] = useState<Record<string, unknown>>({});
+
   useEffect(() => {
     fetchModels()
       .then(setAllModels)
@@ -231,7 +244,51 @@ export default function TaskPage() {
     // render already hides the inputs for non-LoRA models, but the form
     // state would persist invisibly without this.
     setForm((p) => ({ ...p, lora_url: "", lora_scale: 1.0 }));
+    // Clear the previous model's dynamic-form values too. Each Atlas model
+    // declares its own set of params; carrying values across would silently
+    // submit the previous model's choices against the new one.
+    setDynamicValues({});
+    setModelParams(null);
   }, [selectedModel?.slug]);
+
+  // Fetch the model's parameter schema whenever the selected model changes.
+  // Returns null params for non-Atlas models (we keep the hardcoded form
+  // for them) or for the handful of Atlas models Atlas doesn't host a
+  // schema for (flux-2-pro, imagen-4-ultra, ideogram-v3 — those fall back
+  // to a minimal prompt-only form). Schema is cached server-side after the
+  // first hit so back-to-back model picks are fast.
+  useEffect(() => {
+    if (!selectedModel) return;
+    if (selectedModel.provider !== "atlas") return;
+    let cancelled = false;
+    fetchModelSchema(selectedModel.slug)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.params) {
+          setModelParams(res.params);
+          // Seed dynamic-form values from the schema defaults so the form
+          // is functional immediately (user can submit without touching
+          // anything and get a sensible result).
+          const initial: Record<string, unknown> = {};
+          for (const p of res.params) {
+            if (p.default !== null && p.default !== undefined) {
+              initial[p.name] = p.default;
+            }
+          }
+          setDynamicValues(initial);
+        } else {
+          setModelParams(null);
+        }
+      })
+      .catch(() => {
+        // Schema fetch failure is non-fatal -- frontend just falls back
+        // to the existing hardcoded form. Log to console for diagnosis.
+        if (!cancelled) setModelParams(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedModel?.slug, selectedModel?.provider, selectedModel]);
 
   // ---- form state -----------------------------------------------------
   const [form, setForm] = useState<FormParams>(DEFAULTS);
@@ -357,7 +414,34 @@ export default function TaskPage() {
 
       // Build params object trimmed to fields the selected slug expects.
       // Backend validates; sending extras gets ignored for most slugs.
-      const paramsForSlug = buildParams(task, form);
+      //
+      // When the model has a dynamic schema (Atlas + schema available),
+      // the dynamic-form values are merged in. They take precedence over
+      // any hardcoded duplicate fields (e.g. the t2v "duration_seconds"
+      // legacy field gets overridden by Atlas's "duration" key).
+      let paramsForSlug = buildParams(task, form);
+      if (modelParams) {
+        // The dynamic form has been activated for this model. The schema-
+        // declared fields ARE the canonical params. Strip the hardcoded
+        // overlapping ones (duration_seconds, resolution, aspect_ratio,
+        // width/height/steps/guidance) so they don't override what the
+        // user actually selected in the dynamic form -- and so Atlas
+        // doesn't receive duplicate/conflicting keys.
+        const hardcodedToDrop = new Set([
+          "width", "height",
+          "steps", "guidance",
+          "duration_seconds",
+          // resolution/aspect_ratio are also Atlas-native names; they're
+          // in dynamicValues already.
+          "resolution", "aspect_ratio",
+          // fps/frames are video-swap-only and unrelated to Atlas knobs.
+        ]);
+        const filtered: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(paramsForSlug)) {
+          if (!hardcodedToDrop.has(k)) filtered[k] = v;
+        }
+        paramsForSlug = { ...filtered, ...dynamicValues };
+      }
 
       const res = await submitJob(selectedModel.slug, paramsForSlug, inputIds);
       const job = await getJob(res.job_id);
@@ -543,8 +627,25 @@ export default function TaskPage() {
               />
             </div>
 
+            {/* ----- Dynamic form for Atlas models with a schema -----
+                For any Atlas model where /api/models/{slug}/schema returned
+                params (most of them), we render the auto-generated form
+                here and skip the hardcoded body fields below. The 3 Atlas
+                models Atlas doesn't host a schema for (flux-2-pro,
+                imagen-4-ultra, ideogram-v3) fall through to the hardcoded
+                t2i form below as a minimal experience. */}
+            {modelParams && (
+              <DynamicParamForm
+                params={modelParams}
+                values={dynamicValues}
+                onChange={(name, value) =>
+                  setDynamicValues((prev) => ({ ...prev, [name]: value }))
+                }
+              />
+            )}
+
             {/* ----- t2i size sliders ----- */}
-            {task === "t2i" && (
+            {!modelParams && task === "t2i" && (
               <div className="grid grid-cols-2 gap-4">
                 <NumberSlider
                   label="Width"
@@ -566,7 +667,7 @@ export default function TaskPage() {
             )}
 
             {/* ----- steps + guidance (t2i + i2i) ----- */}
-            {(task === "t2i" || task === "i2i") && (
+            {!modelParams && (task === "t2i" || task === "i2i") && (
               <>
                 <NumberSlider
                   label="Steps"
@@ -595,7 +696,7 @@ export default function TaskPage() {
             )}
 
             {/* ----- video-swap fps + frames ----- */}
-            {task === "video-swap" && (
+            {!modelParams && task === "video-swap" && (
               <div className="grid grid-cols-2 gap-4">
                 <NumberSlider
                   label="FPS"
@@ -618,7 +719,7 @@ export default function TaskPage() {
             )}
 
             {/* ----- t2v: duration + resolution + aspect ratio ----- */}
-            {task === "t2v" && (
+            {!modelParams && task === "t2v" && (
               <>
                 <NumberSlider
                   label="Duration (seconds)"

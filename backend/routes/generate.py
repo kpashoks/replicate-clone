@@ -6,7 +6,7 @@ from typing import Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 import jobs
 import models_registry
@@ -113,7 +113,20 @@ class CharacterSwapParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
-class AtlasT2IParams(BaseModel):
+class _AtlasParamsBase(BaseModel):
+    """Shared base for every Atlas Pydantic schema.
+
+    extra="allow" so the dynamic-form generator (powered by Atlas's per-model
+    OpenAPI schema) can send any vendor-specific param the model accepts
+    -- cfg_scale, negative_prompt, enhance_prompt, motion_amount, etc. --
+    without us having to enumerate them here. The dispatcher
+    (jobs.py:_build_atlas_image_body) forwards everything except an internal
+    deny-list (prompt, seed, file inputs, lora_*).
+    """
+    model_config = ConfigDict(extra="allow")
+
+
+class AtlasT2IParams(_AtlasParamsBase):
     """Permissive shared schema for Atlas-hosted T2I models. Atlas's per-vendor
     models accept different subsets of these; the backend forwards what's
     set and Atlas ignores unknowns. Fields here mirror what the consolidated
@@ -155,7 +168,7 @@ class AtlasT2IParams(BaseModel):
     )
 
 
-class AtlasI2IParams(BaseModel):
+class AtlasI2IParams(_AtlasParamsBase):
     """Permissive shared schema for Atlas-hosted I2I models. Width/height are
     typically derived from the reference image, so they're omitted here.
 
@@ -185,7 +198,7 @@ class AtlasI2IParams(BaseModel):
     )
 
 
-class AtlasVideoSwapParams(BaseModel):
+class AtlasVideoSwapParams(_AtlasParamsBase):
     """Schema for Atlas video-swap / motion-control / reference-to-video
     models. They all take a source motion video + a reference character
     image (via the dispatcher's upload step), plus an optional prompt and
@@ -196,7 +209,7 @@ class AtlasVideoSwapParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
-class AtlasT2VParams(BaseModel):
+class AtlasT2VParams(_AtlasParamsBase):
     """Schema for Atlas text-to-video models (Seedance, HappyHorse, Kling,
     Veo, Wan T2V, Sora, etc.). Each vendor accepts a slightly different
     subset of these knobs; Atlas tends to ignore unknown fields rather
