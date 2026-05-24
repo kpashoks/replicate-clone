@@ -80,6 +80,12 @@ type FormParams = {
   // pre-fills the rename modal. Empty = fall back to env default
   // (DOWNLOAD_DIR), fetched once from /api/settings on mount.
   download_dir: string;
+  // Text-to-video knobs. Each vendor accepts a slightly different subset;
+  // Atlas usually ignores unknown fields rather than rejecting. Defaults
+  // are the universal lowest-common-denominator (5s, 720p, 16:9).
+  duration_seconds: number;
+  resolution: "720p" | "1080p";
+  aspect_ratio: "16:9" | "9:16" | "1:1";
 };
 
 const DEFAULTS: FormParams = {
@@ -94,6 +100,9 @@ const DEFAULTS: FormParams = {
   lora_url: "",
   lora_scale: 1.0,
   download_dir: "",
+  duration_seconds: 5,
+  resolution: "720p",
+  aspect_ratio: "16:9",
 };
 
 /**
@@ -314,7 +323,7 @@ export default function TaskPage() {
   const refSlots = useMultiUpload ? 0 : Math.min(maxRefs, 2);
 
   const requiredUploadsMet = (() => {
-    if (task === "t2i") return true;
+    if (task === "t2i" || task === "t2v") return true;
     if (task === "video-swap") return !!videoUpload && !!imageUploads[0];
     // i2i — at least one image must be uploaded (multi or labeled).
     return imageUploads.some((u) => u !== null);
@@ -606,6 +615,67 @@ export default function TaskPage() {
                   hint={`~${(form.frames / form.fps).toFixed(1)}s`}
                 />
               </div>
+            )}
+
+            {/* ----- t2v: duration + resolution + aspect ratio ----- */}
+            {task === "t2v" && (
+              <>
+                <NumberSlider
+                  label="Duration (seconds)"
+                  value={form.duration_seconds}
+                  onChange={(v) =>
+                    setForm((p) => ({ ...p, duration_seconds: v }))
+                  }
+                  min={3}
+                  max={15}
+                  step={1}
+                  hint="5s is universally supported. 8/10/15s depend on the model — Atlas may downsample if unsupported."
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="t2v-resolution">Resolution</Label>
+                    <div className="flex gap-2">
+                      {(["720p", "1080p"] as const).map((r) => (
+                        <Button
+                          key={r}
+                          type="button"
+                          variant={
+                            form.resolution === r ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            setForm((p) => ({ ...p, resolution: r }))
+                          }
+                          className="flex-1"
+                        >
+                          {r}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="t2v-aspect">Aspect ratio</Label>
+                    <div className="flex gap-2">
+                      {(["16:9", "9:16", "1:1"] as const).map((ar) => (
+                        <Button
+                          key={ar}
+                          type="button"
+                          variant={
+                            form.aspect_ratio === ar ? "default" : "outline"
+                          }
+                          size="sm"
+                          onClick={() =>
+                            setForm((p) => ({ ...p, aspect_ratio: ar }))
+                          }
+                          className="flex-1"
+                        >
+                          {ar}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
 
             {/* ----- seed (always) ----- */}
@@ -919,6 +989,15 @@ function buildParams(task: Task, f: FormParams): Record<string, unknown> {
       body.lora_scale = f.lora_scale;
     }
     return body;
+  }
+  if (task === "t2v") {
+    return {
+      prompt: f.prompt,
+      seed: f.seed,
+      duration_seconds: f.duration_seconds,
+      resolution: f.resolution,
+      aspect_ratio: f.aspect_ratio,
+    };
   }
   // video-swap
   return {

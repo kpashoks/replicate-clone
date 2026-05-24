@@ -569,6 +569,21 @@ def _build_atlas_image_body(model: ModelEntry, params: dict) -> dict:
         lora_scale = float(params.get("lora_scale", 1.0))
         body["loras"] = [{"path": lora_url, "scale": lora_scale}]
 
+    # Text-to-video knobs. Atlas's t2v models accept a permissive superset
+    # of these and ignore what they don't understand. Only forward when the
+    # model is actually a t2v model -- non-t2v models (especially older
+    # Atlas i2i ones) sometimes reject unknown keys at the Pydantic layer.
+    if model.task == "t2v":
+        duration = params.get("duration_seconds")
+        if duration is not None:
+            body["duration"] = int(duration)
+        resolution = params.get("resolution")
+        if resolution:
+            body["resolution"] = str(resolution)
+        aspect_ratio = params.get("aspect_ratio")
+        if aspect_ratio:
+            body["aspect_ratio"] = str(aspect_ratio)
+
     return body
 
 

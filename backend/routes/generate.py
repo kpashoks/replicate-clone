@@ -196,6 +196,38 @@ class AtlasVideoSwapParams(BaseModel):
     seed: int = Field(-1, description="-1 means random")
 
 
+class AtlasT2VParams(BaseModel):
+    """Schema for Atlas text-to-video models (Seedance, HappyHorse, Kling,
+    Veo, Wan T2V, Sora, etc.). Each vendor accepts a slightly different
+    subset of these knobs; Atlas tends to ignore unknown fields rather
+    than rejecting them, so we send a permissive superset and let the
+    model use what it understands.
+
+    duration_seconds: most vendors support 5 / 8 / 10s; HappyHorse goes
+        up to 15s. 5 is the safe default.
+    resolution: 720p universal; 1080p widely supported; 4K on a few
+        flagship tiers.
+    aspect_ratio: 16:9 is universal; 9:16 (portrait) and 1:1 are
+        widely-but-not-universally supported.
+    """
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    seed: int = Field(-1, description="-1 means random")
+    duration_seconds: int = Field(
+        5,
+        ge=3,
+        le=15,
+        description="Output clip length in seconds. 5 is universal; 8/10/15 depend on the model.",
+    )
+    resolution: Literal["720p", "1080p"] = Field(
+        "720p",
+        description="Output resolution. 720p is universal; 1080p widely supported.",
+    )
+    aspect_ratio: Literal["16:9", "9:16", "1:1"] = Field(
+        "16:9",
+        description="Output aspect ratio. 16:9 is universal.",
+    )
+
+
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "text-to-image": TextToImageParams,
     "juggernaut-xl": JuggernautParams,
@@ -230,6 +262,15 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-kling-motion-pro": AtlasVideoSwapParams,
     "atlas-wan-2-7-ref-video": AtlasVideoSwapParams,
     "atlas-seedance-2-ref-video": AtlasVideoSwapParams,
+    # Atlas text-to-video. No inputs; prompt-only with shared knobs.
+    "atlas-seedance-2-t2v": AtlasT2VParams,
+    "atlas-seedance-v15-pro-t2v": AtlasT2VParams,
+    "atlas-happyhorse-1-t2v": AtlasT2VParams,
+    "atlas-kling-v3-pro-t2v": AtlasT2VParams,
+    "atlas-veo-3-1-t2v": AtlasT2VParams,
+    "atlas-wan-2-7-t2v": AtlasT2VParams,
+    "atlas-wan-2-6-t2v": AtlasT2VParams,
+    "atlas-sora-2-t2v": AtlasT2VParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -265,6 +306,15 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-kling-motion-pro": 2,
     "atlas-wan-2-7-ref-video": 2,
     "atlas-seedance-2-ref-video": 2,
+    # Atlas text-to-video: no inputs.
+    "atlas-seedance-2-t2v": 0,
+    "atlas-seedance-v15-pro-t2v": 0,
+    "atlas-happyhorse-1-t2v": 0,
+    "atlas-kling-v3-pro-t2v": 0,
+    "atlas-veo-3-1-t2v": 0,
+    "atlas-wan-2-7-t2v": 0,
+    "atlas-wan-2-6-t2v": 0,
+    "atlas-sora-2-t2v": 0,
 }
 
 

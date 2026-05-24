@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ModelCard } from "@/components/ModelCard";
+import { TaskCard } from "@/components/TaskCard";
 import { fetchModels } from "@/lib/api";
-import type { ModelEntry } from "@/lib/types";
+import { groupByTask, type ModelEntry, type Task } from "@/lib/types";
+
+const TASK_ORDER: Task[] = ["t2i", "i2i", "t2v", "video-swap"];
 
 export default function Gallery() {
   const [models, setModels] = useState<ModelEntry[] | null>(null);
@@ -15,13 +17,15 @@ export default function Gallery() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  const grouped = models ? groupByTask(models) : null;
+
   return (
     <main className="container mx-auto py-12 px-4 max-w-6xl">
       <header className="mb-10">
         <h1 className="text-4xl font-bold tracking-tight">replicate-local</h1>
         <p className="text-muted-foreground mt-2">
-          Personal multimodal AI playground. Heavy inference runs on RunPod;
-          orchestration runs here.
+          Personal multimodal AI playground. Heavy inference runs on RunPod or
+          Atlas Cloud; orchestration runs here.
         </p>
       </header>
 
@@ -46,11 +50,13 @@ export default function Gallery() {
         <p className="text-muted-foreground">Loading models…</p>
       )}
 
-      {models && (
+      {grouped && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {models.map((m) => (
-            <ModelCard key={m.slug} model={m} />
-          ))}
+          {TASK_ORDER.map((task) => {
+            const ms = grouped[task];
+            if (ms.length === 0) return null;
+            return <TaskCard key={task} task={task} models={ms} />;
+          })}
         </div>
       )}
     </main>
