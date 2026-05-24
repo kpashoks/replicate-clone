@@ -5,7 +5,7 @@ import { TaskCard } from "@/components/TaskCard";
 import { fetchModels } from "@/lib/api";
 import { groupByTask, type ModelEntry, type Task } from "@/lib/types";
 
-const TASK_ORDER: Task[] = ["t2i", "i2i", "t2v", "video-swap"];
+const TASK_ORDER: Task[] = ["t2i", "i2i", "t2v", "i2v", "video-swap"];
 
 export default function Gallery() {
   const [models, setModels] = useState<ModelEntry[] | null>(null);

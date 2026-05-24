@@ -382,7 +382,7 @@ export default function TaskPage() {
   const requiredUploadsMet = (() => {
     if (task === "t2i" || task === "t2v") return true;
     if (task === "video-swap") return !!videoUpload && !!imageUploads[0];
-    // i2i — at least one image must be uploaded (multi or labeled).
+    // i2i / i2v — at least one image must be uploaded (multi or labeled).
     return imageUploads.some((u) => u !== null);
   })();
 
@@ -406,7 +406,10 @@ export default function TaskPage() {
       if (task === "video-swap") {
         if (videoUpload) inputIds.push(videoUpload.id);
         if (imageUploads[0]) inputIds.push(imageUploads[0].id);
-      } else if (task === "i2i") {
+      } else if (task === "i2i" || task === "i2v") {
+        // Both tasks send their uploaded images via input_ids. The backend
+        // dispatcher picks between the i2i array shape and the i2v
+        // singular-string shape based on model.task.
         for (const u of imageUploads) {
           if (u) inputIds.push(u.id);
         }
@@ -568,15 +571,17 @@ export default function TaskPage() {
               />
             )}
 
-            {task === "i2i" && !useMultiUpload && (
+            {(task === "i2i" || task === "i2v") && !useMultiUpload && (
               <div className="space-y-3">
                 {Array.from({ length: refSlots }).map((_, i) => (
                   <ImageDropzone
                     key={i}
                     label={
-                      refSlots > 1
-                        ? `Reference image ${i + 1}`
-                        : "Source image"
+                      task === "i2v"
+                        ? "First-frame image"
+                        : refSlots > 1
+                          ? `Reference image ${i + 1}`
+                          : "Source image"
                     }
                     onUploaded={(u) =>
                       setImageUploads((arr) => {
@@ -599,7 +604,11 @@ export default function TaskPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="prompt">
-                  {task === "i2i" ? "Edit instruction" : "Prompt"}
+                  {task === "i2i"
+                    ? "Edit instruction"
+                    : task === "i2v"
+                      ? "Animation prompt (optional)"
+                      : "Prompt"}
                 </Label>
                 <Button
                   type="button"
@@ -1098,6 +1107,16 @@ function buildParams(task: Task, f: FormParams): Record<string, unknown> {
       duration_seconds: f.duration_seconds,
       resolution: f.resolution,
       aspect_ratio: f.aspect_ratio,
+    };
+  }
+  if (task === "i2v") {
+    // i2v: prompt is optional (vendors animate the image alone if absent),
+    // seed is always sent. Everything else (duration, resolution,
+    // aspect_ratio, motion settings, audio toggles, ...) comes from the
+    // dynamic form which onSubmit merges on top of this base.
+    return {
+      prompt: f.prompt,
+      seed: f.seed,
     };
   }
   // video-swap

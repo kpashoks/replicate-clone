@@ -3,7 +3,7 @@
 
 export type OutputKind = "image" | "video";
 
-export type Task = "t2i" | "i2i" | "video-swap" | "t2v";
+export type Task = "t2i" | "i2i" | "video-swap" | "t2v" | "i2v";
 
 export type Provider = "runpod" | "wan-animate-http" | "atlas";
 
@@ -110,6 +110,12 @@ export const TASK_META: Record<
     description:
       "Generate a short video from a text prompt. Atlas-hosted models — Seedance, HappyHorse, Kling, Veo, Wan T2V.",
   },
+  i2v: {
+    slug: "i2v",
+    label: "Image to Video",
+    description:
+      "Animate a still image into a short clip. Atlas-hosted — HappyHorse, Veo, Seedance, Kling, Vidu, plus NSFW Wan Spicy variants.",
+  },
 };
 
 export function groupByTask(models: ModelEntry[]): Record<Task, ModelEntry[]> {
@@ -118,6 +124,7 @@ export function groupByTask(models: ModelEntry[]): Record<Task, ModelEntry[]> {
     i2i: [],
     "video-swap": [],
     t2v: [],
+    i2v: [],
   };
   for (const m of models) out[m.task].push(m);
   return out;

@@ -659,7 +659,7 @@ async def _run_atlas_job(
     # ---- Build request body --------------------------------------------
     body = _build_atlas_image_body(model, params)
 
-    # Attach uploaded inputs. There are two body shapes depending on the
+    # Attach uploaded inputs. There are THREE body shapes depending on the
     # model's task:
     #
     # (A) i2i / image-edit models — Atlas convention is
@@ -677,10 +677,17 @@ async def _run_atlas_job(
     #     atlas_image_field, and atlas_video_uses_arrays decides whether
     #     each URL is wrapped in [list] or sent bare.
     #
+    # (C) i2v / image-to-video models — single source image, output is a
+    #     short clip. ALL 11 i2v vendors we ship use singular "image"
+    #     (string URL), so we just write `body[atlas_image_field] = <url>`.
+    #     Verified live across happyhorse, veo3.1, seedance 2.0, kling
+    #     v3.0 std, vidu q3-pro, wan 2.x spicy variants, wan 2.7.
+    #
     # Atlas rejects data: URLs, so every input file is uploaded to Atlas's
     # media bucket first; the returned storage.atlascloud.ai URL goes into
     # the body.
     is_video_swap = model.task == "video-swap" and bool(model.atlas_video_field)
+    is_i2v = model.task == "i2v" and bool(model.atlas_image_field)
 
     if (model.accepts_image or is_video_swap) and input_ids:
         atlas_urls: list[str] = []
@@ -710,6 +717,12 @@ async def _run_atlas_job(
             if len(atlas_urls) >= 2:
                 i = atlas_urls[1]
                 body[model.atlas_image_field] = [i] if model.atlas_video_uses_arrays else i
+        elif is_i2v:
+            # i2v: single source image as a singular string under the
+            # vendor's image field (all 11 use "image" -- but read from
+            # ModelEntry in case Atlas adds a vendor with a different name).
+            if atlas_urls:
+                body[model.atlas_image_field] = atlas_urls[0]
         else:
             body[model.atlas_images_param] = atlas_urls
 

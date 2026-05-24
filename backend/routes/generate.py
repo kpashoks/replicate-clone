@@ -209,6 +209,22 @@ class AtlasVideoSwapParams(_AtlasParamsBase):
     seed: int = Field(-1, description="-1 means random")
 
 
+class AtlasI2VParams(_AtlasParamsBase):
+    """Schema for Atlas image-to-video models (HappyHorse, Veo, Seedance,
+    Kling, Vidu, all the Wan spicy variants). Same shape as AtlasT2VParams
+    -- prompt + seed are the only validated fields; everything else flows
+    through extra="allow" and is constrained per-model by Atlas's hosted
+    OpenAPI schema (used by the frontend's DynamicParamForm).
+
+    The source image is NOT in params -- it's uploaded separately and
+    placed into the request body by the dispatcher's i2v branch under
+    the field name in model.atlas_image_field (default "image", singular
+    string URL, verified across all 11 i2v models we ship).
+    """
+    prompt: str = Field("", max_length=2000)
+    seed: int = Field(-1, description="-1 means random")
+
+
 class AtlasT2VParams(_AtlasParamsBase):
     """Schema for Atlas text-to-video models (Seedance, HappyHorse, Kling,
     Veo, Wan T2V, Sora, etc.). Now that the dynamic form pulls vendor-
@@ -272,6 +288,21 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-wan-2-7-t2v": AtlasT2VParams,
     "atlas-wan-2-6-t2v": AtlasT2VParams,
     "atlas-sora-2-t2v": AtlasT2VParams,
+    # Atlas image-to-video. One reference image + optional prompt; the
+    # dynamic-form generator pulls vendor-specific knobs (duration,
+    # aspect_ratio, resolution, motion settings, audio toggles) from each
+    # model's Atlas-hosted OpenAPI schema.
+    "atlas-happyhorse-1-i2v": AtlasI2VParams,
+    "atlas-veo-3-1-i2v": AtlasI2VParams,
+    "atlas-seedance-2-i2v": AtlasI2VParams,
+    "atlas-kling-v3-std-i2v": AtlasI2VParams,
+    "atlas-vidu-q3-pro-i2v": AtlasI2VParams,
+    "atlas-seedance-v15-spicy-i2v": AtlasI2VParams,
+    "atlas-wan-2-6-spicy-i2v": AtlasI2VParams,
+    "atlas-wan-2-7-i2v": AtlasI2VParams,
+    "atlas-wan-2-2-turbo-spicy-infinite-i2v": AtlasI2VParams,
+    "atlas-wan-2-2-spicy-i2v": AtlasI2VParams,
+    "atlas-wan-2-2-turbo-spicy-i2v": AtlasI2VParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -316,6 +347,18 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-wan-2-7-t2v": 0,
     "atlas-wan-2-6-t2v": 0,
     "atlas-sora-2-t2v": 0,
+    # Atlas image-to-video: 1 source image required.
+    "atlas-happyhorse-1-i2v": 1,
+    "atlas-veo-3-1-i2v": 1,
+    "atlas-seedance-2-i2v": 1,
+    "atlas-kling-v3-std-i2v": 1,
+    "atlas-vidu-q3-pro-i2v": 1,
+    "atlas-seedance-v15-spicy-i2v": 1,
+    "atlas-wan-2-6-spicy-i2v": 1,
+    "atlas-wan-2-7-i2v": 1,
+    "atlas-wan-2-2-turbo-spicy-infinite-i2v": 1,
+    "atlas-wan-2-2-spicy-i2v": 1,
+    "atlas-wan-2-2-turbo-spicy-i2v": 1,
 }
 
 
