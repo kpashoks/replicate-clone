@@ -211,34 +211,22 @@ class AtlasVideoSwapParams(_AtlasParamsBase):
 
 class AtlasT2VParams(_AtlasParamsBase):
     """Schema for Atlas text-to-video models (Seedance, HappyHorse, Kling,
-    Veo, Wan T2V, Sora, etc.). Each vendor accepts a slightly different
-    subset of these knobs; Atlas tends to ignore unknown fields rather
-    than rejecting them, so we send a permissive superset and let the
-    model use what it understands.
+    Veo, Wan T2V, Sora, etc.). Now that the dynamic form pulls vendor-
+    specific knobs from each model's Atlas-hosted OpenAPI schema, this
+    class only validates the two universal fields (prompt + seed). Every
+    other knob (duration, resolution, aspect_ratio, cfg_scale,
+    negative_prompt, ...) flows through via _AtlasParamsBase's
+    extra="allow" and gets forwarded verbatim by the dispatcher.
 
-    duration_seconds: most vendors support 5 / 8 / 10s; HappyHorse goes
-        up to 15s. 5 is the safe default.
-    resolution: 720p universal; 1080p widely supported; 4K on a few
-        flagship tiers.
-    aspect_ratio: 16:9 is universal; 9:16 (portrait) and 1:1 are
-        widely-but-not-universally supported.
+    Removed the previous Literal-constrained resolution/aspect_ratio/
+    duration_seconds fields: vendors disagree on enum casing
+    (Wan: "720P" uppercase; Kling: "720p" lowercase) and on supported
+    durations (Kling: 3/4/5 only; HappyHorse: 3-15; Veo: 6/8/12).
+    Atlas's per-model schema is the authoritative source -- duplicating
+    constraints here just rejected valid values.
     """
     prompt: str = Field(..., min_length=1, max_length=2000)
     seed: int = Field(-1, description="-1 means random")
-    duration_seconds: int = Field(
-        5,
-        ge=3,
-        le=15,
-        description="Output clip length in seconds. 5 is universal; 8/10/15 depend on the model.",
-    )
-    resolution: Literal["720p", "1080p"] = Field(
-        "720p",
-        description="Output resolution. 720p is universal; 1080p widely supported.",
-    )
-    aspect_ratio: Literal["16:9", "9:16", "1:1"] = Field(
-        "16:9",
-        description="Output aspect ratio. 16:9 is universal.",
-    )
 
 
 _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
