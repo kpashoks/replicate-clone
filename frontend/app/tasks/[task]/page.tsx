@@ -382,6 +382,7 @@ export default function TaskPage() {
   const requiredUploadsMet = (() => {
     if (task === "t2i" || task === "t2v") return true;
     if (task === "video-swap") return !!videoUpload && !!imageUploads[0];
+    if (task === "v2v") return !!videoUpload;
     // i2i / i2v — at least one image must be uploaded (multi or labeled).
     return imageUploads.some((u) => u !== null);
   })();
@@ -406,6 +407,9 @@ export default function TaskPage() {
       if (task === "video-swap") {
         if (videoUpload) inputIds.push(videoUpload.id);
         if (imageUploads[0]) inputIds.push(imageUploads[0].id);
+      } else if (task === "v2v") {
+        // v2v: only the source video. No image.
+        if (videoUpload) inputIds.push(videoUpload.id);
       } else if (task === "i2i" || task === "i2v") {
         // Both tasks send their uploaded images via input_ids. The backend
         // dispatcher picks between the i2i array shape and the i2v
@@ -542,9 +546,12 @@ export default function TaskPage() {
               <PodStatusBanner />
             )}
 
-            {/* ----- video upload (video-swap only) ----- */}
-            {task === "video-swap" && (
-              <VideoDropzone onUploaded={setVideoUpload} label="Source video" />
+            {/* ----- video upload (video-swap + v2v) ----- */}
+            {(task === "video-swap" || task === "v2v") && (
+              <VideoDropzone
+                onUploaded={setVideoUpload}
+                label={task === "v2v" ? "Source video to edit/extend" : "Source video"}
+              />
             )}
 
             {/* ----- image uploads (i2i + video-swap) ----- */}
@@ -608,7 +615,9 @@ export default function TaskPage() {
                     ? "Edit instruction"
                     : task === "i2v"
                       ? "Animation prompt (optional)"
-                      : "Prompt"}
+                      : task === "v2v"
+                        ? "Edit / extend instruction"
+                        : "Prompt"}
                 </Label>
                 <Button
                   type="button"
@@ -1114,6 +1123,17 @@ function buildParams(task: Task, f: FormParams): Record<string, unknown> {
     // seed is always sent. Everything else (duration, resolution,
     // aspect_ratio, motion settings, audio toggles, ...) comes from the
     // dynamic form which onSubmit merges on top of this base.
+    return {
+      prompt: f.prompt,
+      seed: f.seed,
+    };
+  }
+  if (task === "v2v") {
+    // v2v: edit/extend a source video. Most vendors want a prompt
+    // (HappyHorse + the Wan extend variants require one); Wan 2.7
+    // video-edit allows empty. Send what the user typed; the dynamic
+    // form fills the per-vendor knobs (denoising_strength, extend_seconds,
+    // num_inference_steps, etc.).
     return {
       prompt: f.prompt,
       seed: f.seed,

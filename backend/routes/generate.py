@@ -209,6 +209,18 @@ class AtlasVideoSwapParams(_AtlasParamsBase):
     seed: int = Field(-1, description="-1 means random")
 
 
+class AtlasV2VParams(_AtlasParamsBase):
+    """Schema for Atlas video-to-video models (HappyHorse video-edit,
+    Wan 2.7 video-edit, Wan 2.5 / 2.2-spicy video-extend variants).
+    Takes a source video and an optional prompt; the dispatcher uploads
+    the video and writes its URL into model.atlas_video_field. Vendor
+    knobs (duration, motion_strength, denoising_strength, num_inference_steps,
+    etc.) flow through extra="allow" and the dynamic-form generator.
+    """
+    prompt: str = Field("", max_length=2000)
+    seed: int = Field(-1, description="-1 means random")
+
+
 class AtlasI2VParams(_AtlasParamsBase):
     """Schema for Atlas image-to-video models (HappyHorse, Veo, Seedance,
     Kling, Vidu, all the Wan spicy variants). Same shape as AtlasT2VParams
@@ -303,6 +315,16 @@ _PARAMS_SCHEMA: dict[str, type[BaseModel]] = {
     "atlas-wan-2-2-turbo-spicy-infinite-i2v": AtlasI2VParams,
     "atlas-wan-2-2-spicy-i2v": AtlasI2VParams,
     "atlas-wan-2-2-turbo-spicy-i2v": AtlasI2VParams,
+    # Atlas video-to-video. One source video + optional prompt; the
+    # dispatcher reads atlas_video_field per model since vendors disagree
+    # ("video" vs "video_url"). Dynamic form fills in vendor-specific
+    # knobs (denoising_strength, extend_seconds, num_inference_steps).
+    "atlas-happyhorse-1-v2v": AtlasV2VParams,
+    "atlas-wan-2-7-v2v": AtlasV2VParams,
+    "atlas-wan-2-5-video-extend": AtlasV2VParams,
+    "atlas-wan-2-2-spicy-video-extend": AtlasV2VParams,
+    "atlas-wan-2-2-spicy-video-extend-lora": AtlasV2VParams,
+    "atlas-ltx-2-v2v": AtlasV2VParams,
 }
 
 # Per-slug minimum-input requirements (number of uploaded files needed).
@@ -359,6 +381,13 @@ _MIN_INPUT_IDS: dict[str, int] = {
     "atlas-wan-2-2-turbo-spicy-infinite-i2v": 1,
     "atlas-wan-2-2-spicy-i2v": 1,
     "atlas-wan-2-2-turbo-spicy-i2v": 1,
+    # Atlas video-to-video: 1 source video required.
+    "atlas-happyhorse-1-v2v": 1,
+    "atlas-wan-2-7-v2v": 1,
+    "atlas-wan-2-5-video-extend": 1,
+    "atlas-wan-2-2-spicy-video-extend": 1,
+    "atlas-wan-2-2-spicy-video-extend-lora": 1,
+    "atlas-ltx-2-v2v": 1,
 }
 
 

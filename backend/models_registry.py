@@ -19,7 +19,7 @@ Provider = Literal["runpod", "wan-animate-http", "atlas"]
 # Task buckets surfaced in the UI. The frontend groups the gallery by task and
 # the per-task page shows a Model picker over every entry sharing the same
 # task value.
-Task = Literal["t2i", "i2i", "video-swap", "t2v", "i2v"]
+Task = Literal["t2i", "i2i", "video-swap", "t2v", "i2v", "v2v"]
 
 # Coarse speed bucket for the picker. fast = <5s, medium = 5-15s, slow = >15s
 # (warm). Local RunPod entries are always slow because of cold-start + GPU
@@ -530,6 +530,125 @@ REGISTRY: dict[str, ModelEntry] = {
         price_per_image_usd=0.020,
         max_ref_images=1,
         provider_label="Atlas · Spicy",
+    ),
+
+    # ---- Atlas Cloud: video-to-video (edit / extend) ---------------------
+    # Take a source video, optionally a prompt, and emit an edited or
+    # extended clip. Most vendors use a singular "video" string field, BUT
+    # wan-2.2-spicy/video-extend (NOT the LoRA variant) uses "video_url" --
+    # the dispatcher reads atlas_video_field per model.
+    # NOT confused with video-swap: video-swap takes video + character
+    # IMAGE for motion-transfer; v2v takes only a source video and edits
+    # or extends IT.
+    "atlas-happyhorse-1-v2v": ModelEntry(
+        slug="atlas-happyhorse-1-v2v",
+        label="HappyHorse 1.0 Video Edit (Atlas)",
+        description="Alibaba's HappyHorse video editor. Take a source video, edit with text instructions + optional reference image inputs. Same vendor as the t2v / i2v HappyHorse entries.",
+        provider="atlas",
+        atlas_model_id="alibaba/happyhorse-1.0/video-edit",
+        atlas_video_field="video",
+        output_kind="video",
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="v2v",
+        nsfw=False,
+        speed="medium",
+        best_for="general video editing",
+        price_per_image_usd=0.140,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-wan-2-7-v2v": ModelEntry(
+        slug="atlas-wan-2-7-v2v",
+        label="Wan 2.7 Video Edit (Atlas)",
+        description="Alibaba's Wan 2.7 video editing. Edit source videos with text instructions, reference images, and style transfer. NSFW-permissive at Atlas; prompt is optional.",
+        provider="atlas",
+        atlas_model_id="alibaba/wan-2.7/video-edit",
+        atlas_video_field="video",
+        output_kind="video",
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="v2v",
+        nsfw=True,
+        speed="medium",
+        best_for="multi-modal editing",
+        price_per_image_usd=0.100,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-wan-2-5-video-extend": ModelEntry(
+        slug="atlas-wan-2-5-video-extend",
+        label="Wan 2.5 Video Extend (Atlas)",
+        description="Alibaba's Wan 2.5 video extension. Generates a continuation forward from your source clip. The cheapest SFW Wan extend tier ($0.052) -- no Wan 2.2 SFW extend exists on Atlas.",
+        provider="atlas",
+        atlas_model_id="alibaba/wan-2.5/video-extend",
+        atlas_video_field="video",
+        output_kind="video",
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="v2v",
+        nsfw=False,
+        speed="medium",
+        best_for="SFW video extension",
+        price_per_image_usd=0.052,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-wan-2-2-spicy-video-extend": ModelEntry(
+        slug="atlas-wan-2-2-spicy-video-extend",
+        label="Wan 2.2 Spicy Video Extend (Atlas)",
+        description="Alibaba's Wan 2.2 Spicy video extension. NSFW-permissive continuation of your source clip. Cheapest extend at $0.032.",
+        provider="atlas",
+        atlas_model_id="alibaba/wan-2.2-spicy/video-extend",
+        # NB: this model uses "video_url" not "video" -- unique among the
+        # 5 v2v models. Atlas's schema is the source of truth; verified live.
+        atlas_video_field="video_url",
+        output_kind="video",
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="v2v",
+        nsfw=True,
+        speed="medium",
+        best_for="NSFW video extension",
+        price_per_image_usd=0.032,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-wan-2-2-spicy-video-extend-lora": ModelEntry(
+        slug="atlas-wan-2-2-spicy-video-extend-lora",
+        label="Wan 2.2 Spicy Video Extend LoRA (Atlas)",
+        description="Wan 2.2 Spicy video extension with LoRA passthrough. Same as the non-LoRA variant but lets you supply a LoRA URL for custom style. Uses 'video' field (not video_url like the non-LoRA variant).",
+        provider="atlas",
+        atlas_model_id="alibaba/wan-2.2-spicy/video-extend-lora",
+        atlas_video_field="video",
+        output_kind="video",
+        accepts_video=True,
+        stage=1,
+        available=True,
+        task="v2v",
+        nsfw=True,
+        speed="medium",
+        best_for="NSFW extend + LoRA",
+        price_per_image_usd=0.040,
+        provider_label="Alibaba · Atlas",
+    ),
+    "atlas-ltx-2-v2v": ModelEntry(
+        slug="atlas-ltx-2-v2v",
+        label="LTX-2 (Coming soon)",
+        description="Lightricks LTX-2. NOT yet on Atlas catalog; placeholder so it shows in the picker once Atlas adds it. Enable available=True at that point.",
+        provider="atlas",
+        atlas_model_id="lightricks/ltx-2",  # speculative — needs to be confirmed when Atlas adds it
+        atlas_video_field="video",
+        output_kind="video",
+        accepts_video=True,
+        stage=2,
+        available=False,
+        task="v2v",
+        nsfw=False,
+        speed="medium",
+        best_for="Lightricks (when available)",
+        price_per_image_usd=None,
+        provider_label="Lightricks · Atlas",
     ),
 
     # ---- Wan 2.2 Animate via dedicated HTTP server -----------------------

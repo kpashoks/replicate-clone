@@ -688,8 +688,9 @@ async def _run_atlas_job(
     # the body.
     is_video_swap = model.task == "video-swap" and bool(model.atlas_video_field)
     is_i2v = model.task == "i2v" and bool(model.atlas_image_field)
+    is_v2v = model.task == "v2v" and bool(model.atlas_video_field)
 
-    if (model.accepts_image or is_video_swap) and input_ids:
+    if (model.accepts_image or model.accepts_video or is_video_swap) and input_ids:
         atlas_urls: list[str] = []
         for input_id in input_ids:
             try:
@@ -723,6 +724,13 @@ async def _run_atlas_job(
             # ModelEntry in case Atlas adds a vendor with a different name).
             if atlas_urls:
                 body[model.atlas_image_field] = atlas_urls[0]
+        elif is_v2v:
+            # v2v: single source video as a singular string under the
+            # vendor's video field. Most v2v models use "video" but
+            # wan-2.2-spicy/video-extend uses "video_url" -- always read
+            # from ModelEntry.atlas_video_field.
+            if atlas_urls:
+                body[model.atlas_video_field] = atlas_urls[0]
         else:
             body[model.atlas_images_param] = atlas_urls
 
