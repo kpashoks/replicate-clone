@@ -93,12 +93,59 @@ class AtlasClient:
         max_seconds: int,
         on_status: Optional[Callable[[dict], Awaitable[None] | None]] = None,
     ) -> dict:
-        """Poll until terminal. Returns the final status payload."""
+        """Poll until terminal. Returns the final status payload.
+
+        Resilient to transient httpx errors (ReadTimeout, ConnectError,
+        RemoteProtocolError, etc). Atlas v2v jobs can run 10-15 min on
+        long source videos, and Cloudflare/network blips during that
+        window shouldn't kill a job that's still progressing server-side.
+
+        Polling only gives up when:
+          - terminal status reached (OK or BAD),
+          - max_seconds elapsed,
+          - or consecutive transient errors exceed MAX_CONSECUTIVE_ERRORS.
+        """
         start = time.monotonic()
         delay = 2.0
         last: dict = {}
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 10  # ~30-100s of unbroken failure at the backoff cap
+
         while True:
-            last = await self.status(prediction_id)
+            try:
+                last = await self.status(prediction_id)
+                consecutive_errors = 0
+            except (
+                httpx.ReadTimeout,
+                httpx.ConnectTimeout,
+                httpx.ConnectError,
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.WriteError,
+                httpx.NetworkError,
+                AtlasError,  # 5xx wrapped by status() — usually transient
+            ) as e:
+                consecutive_errors += 1
+                log.warning(
+                    "Atlas status poll transient error #%d for %s: %s: %s",
+                    consecutive_errors, prediction_id, type(e).__name__, e,
+                )
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    raise AtlasError(
+                        f"Atlas status polling for {prediction_id} failed "
+                        f"{consecutive_errors} times in a row "
+                        f"(last error: {type(e).__name__}: {e}). "
+                        f"Check Atlas dashboard for the prediction state."
+                    ) from e
+                if time.monotonic() - start > max_seconds:
+                    raise AtlasError(
+                        f"Atlas prediction {prediction_id} timed out after "
+                        f"{max_seconds}s (last error: {type(e).__name__}: {e})"
+                    ) from e
+                await asyncio.sleep(delay)
+                delay = min(delay * 1.5, 10.0)
+                continue
+
             if on_status is not None:
                 res = on_status(last)
                 if asyncio.iscoroutine(res):

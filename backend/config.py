@@ -47,7 +47,17 @@ class Settings(BaseSettings):
     # with provider="atlas" will fail at submit with a clear error.
     ATLAS_CLOUD_API_KEY: str = ""
     ATLAS_CLOUD_BASE_URL: str = "https://api.atlascloud.ai"
-    ATLAS_TIMEOUT_SECONDS: int = 600
+    # Max wall-clock seconds the local polling client will wait for an
+    # Atlas job to complete. Observed durations:
+    #   T2I / I2I:                  10-60 s   (default amply covers)
+    #   T2V (Seedance, Wan 2.7):    30-120 s
+    #   I2V:                        60-300 s  (Veo, HappyHorse longest)
+    #   V2V (Wan video-edit):       180-900 s on longer source clips
+    #   video-swap (Wan R2V):       60-180 s
+    # 1800s (30 min) is the lowest-common-denominator that covers v2v
+    # without timing out cheap image jobs. Atlas keeps processing
+    # server-side regardless; this only governs how long WE wait.
+    ATLAS_TIMEOUT_SECONDS: int = 1800
 
     DATA_DIR: str = "./data"
     FRONTEND_URL: str = "http://localhost:3000"
