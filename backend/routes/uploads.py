@@ -36,3 +36,17 @@ async def upload(file: UploadFile = File(...)) -> UploadResponse:
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return UploadResponse(**rec)
+
+
+@router.get("/{input_id}", response_model=UploadResponse)
+async def get_upload(input_id: str) -> UploadResponse:
+    """Rehydrate an upload's metadata by id. Used when a recipe is loaded
+    to restore the file preview in a dropzone without re-uploading. 404 if
+    the file is no longer on disk (data/inputs/ was cleared)."""
+    meta = storage.upload_meta(input_id)
+    if meta is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Upload {input_id} not found (file may have been deleted)",
+        )
+    return UploadResponse(**meta)

@@ -9,6 +9,7 @@ from routes import files as files_routes
 from routes import generate as generate_routes
 from routes import models as models_routes
 from routes import prompts as prompts_routes
+from routes import recipes as recipes_routes
 from routes import uploads as uploads_routes
 
 
@@ -68,6 +69,7 @@ app.include_router(models_routes.router)
 app.include_router(generate_routes.router)
 app.include_router(files_routes.router)
 app.include_router(uploads_routes.router)
+app.include_router(recipes_routes.router)
 
 
 @app.get("/api/health")

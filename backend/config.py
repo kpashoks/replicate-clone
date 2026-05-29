@@ -89,5 +89,5 @@ settings = Settings()
 
 def ensure_data_dirs() -> None:
     base = settings.data_dir_abs
-    for sub in ("inputs", "outputs", "jobs"):
+    for sub in ("inputs", "outputs", "jobs", "recipes"):
         (base / sub).mkdir(parents=True, exist_ok=True)

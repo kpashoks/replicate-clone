@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { uploadFile, fileUrl, type UploadResponse } from "@/lib/api";
@@ -11,6 +11,9 @@ type Props = {
   accept?: string;
   /** Max upload size in MB (for client-side check before POST). */
   maxMB?: number;
+  /** Pre-populate with an already-uploaded video (recipe load). Changing
+   *  the id re-syncs. */
+  initialUpload?: UploadResponse | null;
 };
 
 export function VideoDropzone({
@@ -18,8 +21,19 @@ export function VideoDropzone({
   label = "Source video",
   accept = "video/mp4,video/quicktime,video/webm",
   maxMB = 32,
+  initialUpload,
 }: Props) {
-  const [upload, setUpload] = useState<UploadResponse | null>(null);
+  const [upload, setUpload] = useState<UploadResponse | null>(
+    initialUpload ?? null,
+  );
+
+  // Re-sync when the parent hands us a restored upload (recipe load).
+  // No onUploaded callback -- parent already set its own videoUpload state.
+  useEffect(() => {
+    if (initialUpload === undefined) return;
+    setUpload(initialUpload ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUpload?.id]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);

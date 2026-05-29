@@ -36,6 +36,32 @@ def jobs_dir() -> Path:
     return p
 
 
+def recipes_dir() -> Path:
+    p = settings.data_dir_abs / "recipes"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def upload_meta(input_id: str) -> dict | None:
+    """Rehydrate an upload's metadata from its id (used to restore a
+    recipe's file inputs in the UI without re-uploading). Returns
+    {id, url, name, size} or None if the file is no longer on disk
+    (e.g. data/inputs/ was cleared)."""
+    d = inputs_dir() / input_id
+    if not d.is_dir():
+        return None
+    files = [p for p in d.iterdir() if p.is_file()]
+    if not files:
+        return None
+    f = files[0]
+    return {
+        "id": input_id,
+        "url": f"/api/files/inputs/{input_id}/{f.name}",
+        "name": f.name,
+        "size": f.stat().st_size,
+    }
+
+
 def safe_output_prefix(s: str) -> str:
     """ComfyUI uses the prefix as part of the output filename; sanitize."""
     cleaned = _SAFE_RE.sub("_", s)[:64]

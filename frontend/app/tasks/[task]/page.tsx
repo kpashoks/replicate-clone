@@ -34,16 +34,21 @@ import { Textarea } from "@/components/ui/textarea";
 
 import {
   cancelJob,
+  createRecipe,
   deleteJob,
+  deleteRecipe,
   fetchModels,
   fetchModelSchema,
   fileUrl,
   getJob,
   getSettings,
+  getUpload,
+  listRecipes,
   saveJobOutput,
   submitJob,
   type DeleteResponse,
   type ParamSpec,
+  type Recipe,
   type UploadResponse,
 } from "@/lib/api";
 import {
@@ -201,6 +206,14 @@ export default function TaskPage() {
   // Reset when the selected model changes (different models have different
   // schemas; carrying values across silently would submit nonsense).
   const [dynamicValues, setDynamicValues] = useState<Record<string, unknown>>({});
+  // True once the selected model's schema fetch has settled (success, no-
+  // schema, or non-Atlas). Used to sequence recipe loading: the reset
+  // effect clears form state on model switch, the schema effect seeds
+  // defaults, and only THEN (schemaReady) does a pending recipe overlay
+  // its saved values. Without this gate the reset would clobber the recipe.
+  const [schemaReady, setSchemaReady] = useState(false);
+  // A recipe waiting to be applied once its model is selected + schemaReady.
+  const [pendingRecipe, setPendingRecipe] = useState<Recipe | null>(null);
 
   useEffect(() => {
     fetchModels()
@@ -249,6 +262,7 @@ export default function TaskPage() {
     // submit the previous model's choices against the new one.
     setDynamicValues({});
     setModelParams(null);
+    setSchemaReady(false);
   }, [selectedModel?.slug]);
 
   // Fetch the model's parameter schema whenever the selected model changes.
@@ -259,7 +273,12 @@ export default function TaskPage() {
   // first hit so back-to-back model picks are fast.
   useEffect(() => {
     if (!selectedModel) return;
-    if (selectedModel.provider !== "atlas") return;
+    if (selectedModel.provider !== "atlas") {
+      // Non-Atlas models have no dynamic schema; ready immediately so a
+      // pending recipe can apply.
+      setSchemaReady(true);
+      return;
+    }
     let cancelled = false;
     fetchModelSchema(selectedModel.slug)
       .then((res) => {
@@ -279,16 +298,34 @@ export default function TaskPage() {
         } else {
           setModelParams(null);
         }
+        setSchemaReady(true);
       })
       .catch(() => {
         // Schema fetch failure is non-fatal -- frontend just falls back
-        // to the existing hardcoded form. Log to console for diagnosis.
-        if (!cancelled) setModelParams(null);
+        // to the existing hardcoded form.
+        if (!cancelled) {
+          setModelParams(null);
+          setSchemaReady(true);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedModel?.slug, selectedModel?.provider, selectedModel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel?.slug, selectedModel?.provider]);
+
+  // Apply a pending recipe once its model is selected AND the schema has
+  // settled. Runs AFTER the reset + schema-seed effects, so it safely
+  // overlays the recipe's saved form values, dynamic-form values, and
+  // re-attaches uploaded files without being clobbered. See onLoadRecipe.
+  useEffect(() => {
+    if (!pendingRecipe || !selectedModel || !schemaReady) return;
+    if (pendingRecipe.slug !== selectedModel.slug) return;
+    const recipe = pendingRecipe;
+    setPendingRecipe(null);
+    void applyRecipe(recipe);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingRecipe, selectedModel, schemaReady]);
 
   // ---- form state -----------------------------------------------------
   const [form, setForm] = useState<FormParams>(DEFAULTS);
@@ -301,6 +338,24 @@ export default function TaskPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [enhanceOpen, setEnhanceOpen] = useState(false);
+
+  // ---- recipes (saved configs for this task) --------------------------
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [saveRecipeOpen, setSaveRecipeOpen] = useState(false);
+  // restored uploads to hand to the dropzones via initialUpload props
+  const [restoredImage0, setRestoredImage0] = useState<UploadResponse | null>(null);
+  const [restoredImage1, setRestoredImage1] = useState<UploadResponse | null>(null);
+  const [restoredVideo, setRestoredVideo] = useState<UploadResponse | null>(null);
+
+  const refreshRecipes = useCallback(() => {
+    listRecipes(task)
+      .then(setRecipes)
+      .catch(() => {});
+  }, [task]);
+
+  useEffect(() => {
+    refreshRecipes();
+  }, [refreshRecipes]);
 
   // Aggregate pre-flight image-dimension validation across both dropzones.
   // Either dropzone can flip this true if it detects an uploaded image
@@ -387,6 +442,40 @@ export default function TaskPage() {
     return imageUploads.some((u) => u !== null);
   })();
 
+  // Build the {params, inputIds} payload for the current form state.
+  // Shared by onSubmit (to run) and the save-recipe handler (to persist),
+  // so a saved recipe captures EXACTLY what a Run would send.
+  const buildSubmitPayload = (): {
+    params: Record<string, unknown>;
+    inputIds: string[];
+  } => {
+    const inputIds: string[] = [];
+    if (task === "video-swap") {
+      if (videoUpload) inputIds.push(videoUpload.id);
+      if (imageUploads[0]) inputIds.push(imageUploads[0].id);
+    } else if (task === "v2v") {
+      if (videoUpload) inputIds.push(videoUpload.id);
+    } else if (task === "i2i" || task === "i2v") {
+      for (const u of imageUploads) {
+        if (u) inputIds.push(u.id);
+      }
+    }
+
+    let params = buildParams(task, form);
+    if (modelParams) {
+      const hardcodedToDrop = new Set([
+        "width", "height", "steps", "guidance",
+        "duration_seconds", "resolution", "aspect_ratio",
+      ]);
+      const filtered: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(params)) {
+        if (!hardcodedToDrop.has(k)) filtered[k] = v;
+      }
+      params = { ...filtered, ...dynamicValues };
+    }
+    return { params, inputIds };
+  };
+
   const onSubmit = async () => {
     if (!selectedModel) return;
     if (!selectedModel.available) {
@@ -403,52 +492,7 @@ export default function TaskPage() {
     setSubmitError(null);
     stopTimers();
     try {
-      const inputIds: string[] = [];
-      if (task === "video-swap") {
-        if (videoUpload) inputIds.push(videoUpload.id);
-        if (imageUploads[0]) inputIds.push(imageUploads[0].id);
-      } else if (task === "v2v") {
-        // v2v: only the source video. No image.
-        if (videoUpload) inputIds.push(videoUpload.id);
-      } else if (task === "i2i" || task === "i2v") {
-        // Both tasks send their uploaded images via input_ids. The backend
-        // dispatcher picks between the i2i array shape and the i2v
-        // singular-string shape based on model.task.
-        for (const u of imageUploads) {
-          if (u) inputIds.push(u.id);
-        }
-      }
-
-      // Build params object trimmed to fields the selected slug expects.
-      // Backend validates; sending extras gets ignored for most slugs.
-      //
-      // When the model has a dynamic schema (Atlas + schema available),
-      // the dynamic-form values are merged in. They take precedence over
-      // any hardcoded duplicate fields (e.g. the t2v "duration_seconds"
-      // legacy field gets overridden by Atlas's "duration" key).
-      let paramsForSlug = buildParams(task, form);
-      if (modelParams) {
-        // The dynamic form has been activated for this model. The schema-
-        // declared fields ARE the canonical params. Strip the hardcoded
-        // overlapping ones (duration_seconds, resolution, aspect_ratio,
-        // width/height/steps/guidance) so they don't override what the
-        // user actually selected in the dynamic form -- and so Atlas
-        // doesn't receive duplicate/conflicting keys.
-        const hardcodedToDrop = new Set([
-          "width", "height",
-          "steps", "guidance",
-          "duration_seconds",
-          // resolution/aspect_ratio are also Atlas-native names; they're
-          // in dynamicValues already.
-          "resolution", "aspect_ratio",
-          // fps/frames are video-swap-only and unrelated to Atlas knobs.
-        ]);
-        const filtered: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(paramsForSlug)) {
-          if (!hardcodedToDrop.has(k)) filtered[k] = v;
-        }
-        paramsForSlug = { ...filtered, ...dynamicValues };
-      }
+      const { params: paramsForSlug, inputIds } = buildSubmitPayload();
 
       const res = await submitJob(selectedModel.slug, paramsForSlug, inputIds);
       const job = await getJob(res.job_id);
@@ -474,6 +518,105 @@ export default function TaskPage() {
 
   const randomizeSeed = () =>
     setForm((p) => ({ ...p, seed: Math.floor(Math.random() * 0xffffffff) }));
+
+  // ---- recipe save / load ---------------------------------------------
+  const onSaveRecipe = async (name: string) => {
+    if (!selectedModel) return;
+    const { params, inputIds } = buildSubmitPayload();
+    await createRecipe({
+      name,
+      slug: selectedModel.slug,
+      task,
+      params,
+      input_ids: inputIds,
+    });
+    refreshRecipes();
+  };
+
+  // Stash the recipe + navigate to its model. The actual application (form
+  // fields, dynamic values, uploads) is deferred to the apply-pending
+  // effect, which runs AFTER the model-switch reset + schema fetch settle.
+  const onLoadRecipe = (recipe: Recipe) => {
+    setSubmitError(null);
+    setPendingRecipe(recipe);
+    onSelectModel(recipe.slug);
+  };
+
+  // The deferred application. Called by the apply-pending effect once the
+  // model is selected + schemaReady. Safe from the reset-effect clobber.
+  const applyRecipe = async (recipe: Recipe) => {
+    const p = recipe.params;
+    const numOr = (k: string, fallback: number) =>
+      typeof p[k] === "number" ? (p[k] as number) : fallback;
+    const strOr = (k: string, fallback: string) =>
+      typeof p[k] === "string" ? (p[k] as string) : fallback;
+
+    // 1. Scalar FormParams fields (prompt/seed always; the hardcoded-form
+    //    knobs only matter for non-Atlas models but are harmless to set).
+    setForm((prev) => ({
+      ...prev,
+      prompt: strOr("prompt", ""),
+      seed: numOr("seed", -1),
+      width: numOr("width", prev.width),
+      height: numOr("height", prev.height),
+      steps: numOr("steps", prev.steps),
+      guidance: numOr("guidance", prev.guidance),
+      fps: numOr("fps", prev.fps),
+      frames: numOr("frames", prev.frames),
+      duration_seconds: numOr("duration_seconds", prev.duration_seconds),
+      resolution: strOr("resolution", prev.resolution) as FormParams["resolution"],
+      aspect_ratio: strOr("aspect_ratio", prev.aspect_ratio) as FormParams["aspect_ratio"],
+      lora_url: strOr("lora_url", ""),
+      lora_scale: numOr("lora_scale", 1.0),
+    }));
+
+    // 2. Dynamic-form values: overlay the recipe's saved values onto the
+    //    just-seeded schema defaults, restricted to keys the schema exposes.
+    if (modelParams) {
+      setDynamicValues((prev) => {
+        const next = { ...prev };
+        for (const ps of modelParams) {
+          const v = p[ps.name];
+          if (v !== undefined) next[ps.name] = v;
+        }
+        return next;
+      });
+    }
+
+    // 3. Re-attach uploaded files. The reset effect already cleared them;
+    //    rehydrate each input_id's metadata for the dropzone preview.
+    setImageUploads([null, null]);
+    setVideoUpload(null);
+    setRestoredImage0(null);
+    setRestoredImage1(null);
+    setRestoredVideo(null);
+    const ids = recipe.input_ids || [];
+    const fetchAt = async (i: number) =>
+      ids[i] ? await getUpload(ids[i]) : null;
+    if (recipe.task === "video-swap") {
+      const v = await fetchAt(0);
+      const img = await fetchAt(1);
+      if (v) { setVideoUpload(v); setRestoredVideo(v); }
+      if (img) {
+        setImageUploads((a) => { const n = [...a]; n[0] = img; return n; });
+        setRestoredImage0(img);
+      }
+    } else if (recipe.task === "v2v") {
+      const v = await fetchAt(0);
+      if (v) { setVideoUpload(v); setRestoredVideo(v); }
+    } else if (recipe.task === "i2i" || recipe.task === "i2v") {
+      const a0 = await fetchAt(0);
+      const a1 = await fetchAt(1);
+      if (a0) {
+        setImageUploads((a) => { const n = [...a]; n[0] = a0; return n; });
+        setRestoredImage0(a0);
+      }
+      if (a1) {
+        setImageUploads((a) => { const n = [...a]; n[1] = a1; return n; });
+        setRestoredImage1(a1);
+      }
+    }
+  };
 
   // ---- render helpers -------------------------------------------------
   if (!taskMeta) {
@@ -538,6 +681,39 @@ export default function TaskPage() {
               )}
             </div>
 
+            {/* ----- Saved recipes loader ----- */}
+            {recipes.length > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="recipe-picker">Load a saved recipe</Label>
+                <div className="flex gap-2">
+                  <select
+                    id="recipe-picker"
+                    defaultValue=""
+                    onChange={(e) => {
+                      const r = recipes.find((x) => x.id === e.target.value);
+                      if (r) onLoadRecipe(r);
+                      e.target.value = ""; // reset so the same one can be re-picked
+                    }}
+                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="" disabled>
+                      {recipes.length} saved recipe
+                      {recipes.length === 1 ? "" : "s"} — pick to load…
+                    </option>
+                    {recipes.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Loads the model, settings, and uploaded files from a
+                  previously-saved recipe in one click.
+                </p>
+              </div>
+            )}
+
             {/* ----- Self-hosted Pod health banner (character-swap only) -----
                 Surfaces "Pod is online" or a step-by-step restart reminder
                 when the user picks the self-hosted Wan 2.2 Animate model.
@@ -551,6 +727,7 @@ export default function TaskPage() {
               <VideoDropzone
                 onUploaded={setVideoUpload}
                 label={task === "v2v" ? "Source video to edit/extend" : "Source video"}
+                initialUpload={restoredVideo}
               />
             )}
 
@@ -565,6 +742,7 @@ export default function TaskPage() {
                     return next;
                   })
                 }
+                initialUpload={restoredImage0}
               />
             )}
 
@@ -602,6 +780,7 @@ export default function TaskPage() {
                     // together via the same singleInvalidDim flag - any
                     // bad slot blocks Run.
                     onValidationChange={setSingleInvalidDim}
+                    initialUpload={i === 0 ? restoredImage0 : restoredImage1}
                   />
                 ))}
               </div>
@@ -970,6 +1149,19 @@ export default function TaskPage() {
                         : "Run"}
             </Button>
 
+            {/* Save the current model + settings + uploads as a reusable
+                recipe. Disabled until a model is selected. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSaveRecipeOpen(true)}
+              disabled={!selectedModel}
+              className="w-full"
+              title="Save this model + settings + uploads so you can re-run it later"
+            >
+              💾 Save as recipe
+            </Button>
+
             {submitError && (
               <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                 {submitError}
@@ -1063,7 +1255,106 @@ export default function TaskPage() {
           onAccept={(enhanced) => setForm((p) => ({ ...p, prompt: enhanced }))}
         />
       )}
+
+      <SaveRecipeModal
+        open={saveRecipeOpen}
+        onClose={() => setSaveRecipeOpen(false)}
+        defaultName={
+          selectedModel
+            ? `${selectedModel.label}${form.prompt ? " — " + form.prompt.slice(0, 40) : ""}`
+            : ""
+        }
+        onSave={onSaveRecipe}
+      />
     </main>
+  );
+}
+
+// =====================================================================
+// Save Recipe modal
+// =====================================================================
+function SaveRecipeModal({
+  open,
+  onClose,
+  defaultName,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  defaultName: string;
+  onSave: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(defaultName);
+      setBusy(false);
+      setError(null);
+      setSaved(false);
+    }
+  }, [open, defaultName]);
+
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(name.trim());
+      setSaved(true);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && !busy && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save as recipe</DialogTitle>
+          <DialogDescription>
+            Saves the current model, all settings, and references to your
+            uploaded files. Load it later from the &quot;Load a saved
+            recipe&quot; dropdown to re-run in one click.
+          </DialogDescription>
+        </DialogHeader>
+
+        {saved ? (
+          <div className="rounded-md border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+            ✓ Recipe saved. It&apos;s now in the dropdown at the top of the form.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="recipe-name">Recipe name</Label>
+            <Input
+              id="recipe-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Anime portrait, cfg 0.7"
+              autoFocus
+            />
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+          </div>
+        )}
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" disabled={busy} />}>
+            {saved ? "Done" : "Cancel"}
+          </DialogClose>
+          {!saved && (
+            <Button onClick={submit} disabled={busy || !name.trim()}>
+              {busy ? "Saving…" : "Save recipe"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -236,6 +236,55 @@ export async function getWanAnimateHealth(): Promise<WanAnimateHealth> {
   return jsonOrThrow<WanAnimateHealth>(res);
 }
 
+// ---- Recipes (saved model + params + input references) ----------------
+
+export type Recipe = {
+  id: string;
+  name: string;
+  slug: string;
+  task: string;
+  params: Record<string, unknown>;
+  input_ids: string[];
+  created_at: number;
+};
+
+export type RecipeCreate = {
+  name: string;
+  slug: string;
+  task: string;
+  params: Record<string, unknown>;
+  input_ids: string[];
+};
+
+export async function createRecipe(body: RecipeCreate): Promise<Recipe> {
+  const res = await fetch(`${API_BASE}/api/recipes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return jsonOrThrow<Recipe>(res);
+}
+
+export async function listRecipes(task?: string): Promise<Recipe[]> {
+  const q = task ? `?task=${encodeURIComponent(task)}` : "";
+  const res = await fetch(`${API_BASE}/api/recipes${q}`, { cache: "no-store" });
+  return jsonOrThrow<Recipe[]>(res);
+}
+
+export async function deleteRecipe(id: string): Promise<{ deleted: string }> {
+  const res = await fetch(`${API_BASE}/api/recipes/${id}`, { method: "DELETE" });
+  return jsonOrThrow<{ deleted: string }>(res);
+}
+
+/** Rehydrate an uploaded file's metadata by id (to restore a recipe's
+ *  file inputs in a dropzone without re-uploading). Returns null if the
+ *  file is gone (data/inputs/ cleared). */
+export async function getUpload(id: string): Promise<UploadResponse | null> {
+  const res = await fetch(`${API_BASE}/api/uploads/${id}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  return jsonOrThrow<UploadResponse>(res);
+}
+
 /** Build an absolute URL for a server-served file path like "/api/files/outputs/<id>/<name>". */
 export function fileUrl(path: string): string {
   if (!path.startsWith("/")) path = "/" + path;

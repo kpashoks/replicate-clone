@@ -25,6 +25,10 @@ type Props = {
   /** Bubbles up validation state when an upload's shortest side is below
    *  minDim. Parent uses this to disable Run. */
   onValidationChange?: (hasInvalid: boolean) => void;
+  /** Pre-populate the dropzone with an already-uploaded file (e.g. when a
+   *  recipe is loaded). Dimensions are unknown for a restored upload, so
+   *  the dim-validation check is skipped for it. Changing the id re-syncs. */
+  initialUpload?: UploadResponse | null;
 };
 
 export function ImageDropzone({
@@ -33,10 +37,23 @@ export function ImageDropzone({
   accept = "image/png,image/jpeg,image/webp",
   minDim,
   onValidationChange,
+  initialUpload,
 }: Props) {
   const [upload, setUpload] = useState<
     (UploadResponse & { width: number; height: number }) | null
-  >(null);
+  >(initialUpload ? { ...initialUpload, width: 0, height: 0 } : null);
+
+  // Re-sync when the parent hands us a (different) restored upload, e.g.
+  // when a recipe is loaded. We do NOT call onUploaded here -- the parent
+  // set its own imageUploads state when it loaded the recipe, so calling
+  // back would be redundant (and risk a loop).
+  useEffect(() => {
+    if (initialUpload === undefined) return;
+    setUpload(
+      initialUpload ? { ...initialUpload, width: 0, height: 0 } : null,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUpload?.id]);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
