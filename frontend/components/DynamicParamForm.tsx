@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { InfoIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -7,8 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import type { ParamSpec } from "@/lib/api";
+import { uploadFile, type ParamSpec } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+/** Sentinel value the backend recognizes: when a dynamic-form field value
+ *  starts with this prefix, jobs.py resolves the upload id into an Atlas
+ *  media URL at submit time. A literal URL the user pasted has no prefix
+ *  and passes through untouched. */
+const UPLOAD_SENTINEL = "upload://";
 
 /**
  * Renders a form field per parameter that an Atlas model declares in its
@@ -74,6 +81,11 @@ function ParamField({
   value: unknown;
   onChange: (v: unknown) => void;
 }) {
+  // 0) secondary file-upload field (last_image, end_image, audio) -> dropzone
+  if (spec.is_upload) {
+    return <UploadField spec={spec} value={value} onChange={onChange} />;
+  }
+
   // 1) enum (regardless of declared ui_component) renders as a button group
   //    for short lists or a select for long ones. Atlas's "select" hint
   //    triggers the same render path.
@@ -377,6 +389,110 @@ function NumericInputField({
           if (!Number.isNaN(parsed)) onChange(parsed);
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * Secondary file-upload field (e.g. last_image, end_image, audio). Lets the
+ * user EITHER upload a file (which we push to /api/uploads, then store as an
+ * "upload://<id>" sentinel the backend resolves to an Atlas URL) OR paste a
+ * URL directly (stored verbatim). Both are optional -- these fields enhance
+ * the generation but aren't required.
+ */
+function UploadField({
+  spec,
+  value,
+  onChange,
+}: {
+  spec: ParamSpec;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filename, setFilename] = useState<string | null>(null);
+
+  const accept =
+    spec.upload_kind === "audio"
+      ? "audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/flac,audio/aac,.mp3,.wav,.m4a,.ogg,.flac,.aac"
+      : spec.upload_kind === "video"
+        ? "video/mp4,video/quicktime,video/webm"
+        : "image/png,image/jpeg,image/webp";
+
+  const current = typeof value === "string" ? value : "";
+  const isUploaded = current.startsWith(UPLOAD_SENTINEL);
+  const isUrl = current && !isUploaded;
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const res = await uploadFile(file);
+      onChange(`${UPLOAD_SENTINEL}${res.id}`);
+      setFilename(file.name);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const clear = () => {
+    onChange("");
+    setFilename(null);
+    setError(null);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <FieldLabel spec={spec} />
+
+      {isUploaded ? (
+        <div className="flex items-center justify-between rounded-md border border-green-500/40 bg-green-500/10 px-2.5 py-1.5 text-xs">
+          <span className="truncate text-green-700 dark:text-green-400">
+            ✓ Uploaded{filename ? `: ${filename}` : ""}
+          </span>
+          <Button type="button" variant="ghost" size="xs" onClick={clear}>
+            Remove
+          </Button>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => inputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading
+                ? "Uploading…"
+                : `Upload ${spec.upload_kind || "file"}`}
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept={accept}
+              className="hidden"
+              onChange={(e) => handleFile(e.target.files?.[0])}
+            />
+          </div>
+          {/* URL-paste fallback for users who already have a hosted URL. */}
+          <Input
+            type="text"
+            placeholder="…or paste a URL"
+            value={isUrl ? current : ""}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

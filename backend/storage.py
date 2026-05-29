@@ -9,7 +9,9 @@ from config import settings
 _SAFE_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 _ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 _ALLOWED_VIDEO_EXTS = {".mp4", ".mov", ".webm", ".avi", ".mkv"}
-_ALLOWED_UPLOAD_EXTS = _ALLOWED_IMAGE_EXTS | _ALLOWED_VIDEO_EXTS
+# Audio for the i2v driving-audio / reference-audio upload fields.
+_ALLOWED_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"}
+_ALLOWED_UPLOAD_EXTS = _ALLOWED_IMAGE_EXTS | _ALLOWED_VIDEO_EXTS | _ALLOWED_AUDIO_EXTS
 
 
 def new_job_id() -> str:

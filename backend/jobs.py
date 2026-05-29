@@ -524,6 +524,14 @@ _EXT_TO_MIME = {
     ".mp4": "video/mp4",
     ".mov": "video/quicktime",
     ".webm": "video/webm",
+    ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".aac": "audio/aac",
 }
 
 
@@ -733,6 +741,36 @@ async def _run_atlas_job(
                 body[model.atlas_video_field] = atlas_urls[0]
         else:
             body[model.atlas_images_param] = atlas_urls
+
+    # ---- Resolve secondary file-upload fields --------------------------
+    # The dynamic form can set body values to an "upload://<upload_id>"
+    # sentinel for optional file fields (last_image, end_image, audio).
+    # Resolve each: load from data/inputs/, push to Atlas's media bucket,
+    # replace the sentinel with the returned URL. A literal URL the user
+    # pasted (no sentinel prefix) passes through untouched.
+    _UPLOAD_SENTINEL = "upload://"
+    for key, val in list(body.items()):
+        if isinstance(val, str) and val.startswith(_UPLOAD_SENTINEL):
+            upload_id = val[len(_UPLOAD_SENTINEL):]
+            try:
+                path = storage.resolve_input(upload_id)
+            except (FileNotFoundError, OSError) as e:
+                registry.update(
+                    job_id, status="failed",
+                    error=f"upload (field {key}) {upload_id}: {e}",
+                )
+                return
+            try:
+                url = await client.upload_media(
+                    path, content_type=_content_type_for(path)
+                )
+            except AtlasError as e:
+                registry.update(
+                    job_id, status="failed",
+                    error=f"atlas upload (field {key}) {upload_id}: {e}",
+                )
+                return
+            body[key] = url
 
     # ---- Submit --------------------------------------------------------
     try:

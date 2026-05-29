@@ -190,8 +190,13 @@ export type ParamSpec = {
   minimum: number | null;
   maximum: number | null;
   step: number | null;
-  ui_component: "" | "slider" | "select" | "textarea" | "uploaders";
+  ui_component: "" | "slider" | "select" | "textarea" | "uploader" | "uploaders";
   required: boolean;
+  /** True for secondary file-upload fields (last_image, end_image, audio).
+   *  The form renders an upload dropzone instead of a URL text input. */
+  is_upload: boolean;
+  /** "image" | "audio" | "video" — which dropzone accept-type to use. */
+  upload_kind: string;
 };
 
 export type ModelSchemaResponse = {

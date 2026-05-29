@@ -27,6 +27,11 @@ class ParamSpec(BaseModel):
     step: float | None = None
     ui_component: str = ""
     required: bool = False
+    # Secondary file-upload field (e.g. last_image, end_image, audio).
+    # When True, the frontend renders an upload dropzone of upload_kind
+    # ("image"|"audio"|"video") instead of a URL text input.
+    is_upload: bool = False
+    upload_kind: str = ""
 
 
 class ModelSchemaResponse(BaseModel):

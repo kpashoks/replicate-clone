@@ -29,7 +29,8 @@ _CACHE_LOCK = asyncio.Lock()
 
 # Property names we never want to expose in the dynamic form because they
 # are either set server-side (model), handled by specialized UI controls
-# (prompt/seed/lora_*), or supplied via the upload dropzones (image/video).
+# (prompt/seed/lora_*), or supplied via the PRIMARY upload dropzone
+# (image/video for i2i/i2v/v2v -- the task page's own dropzone).
 _FILTERED_NAMES: set[str] = {
     "model",
     "prompt",
@@ -37,10 +38,10 @@ _FILTERED_NAMES: set[str] = {
     "lora_url",
     "lora_scale",
     "loras",
-    "image",
+    "image",        # primary first-frame / source image (task-page dropzone)
     "images",
     "image_urls",
-    "video",
+    "video",        # primary source video (task-page dropzone)
     "videos",
     "mask_image",
     "reference_images",
@@ -50,6 +51,38 @@ _FILTERED_NAMES: set[str] = {
     "enable_base64_output",
     "enable_sync_mode",
 }
+
+# SECONDARY file-upload fields: these are optional extra files (end frame,
+# driving audio) that we DO want to surface -- as upload dropzones, not
+# URL text inputs. Maps field name -> upload kind for the frontend widget.
+# A field is also treated as an uploader if its x-ui-component is
+# "uploader"/"uploaders" (Atlas's own hint), with kind inferred by name.
+_UPLOAD_FIELD_KINDS: dict[str, str] = {
+    "last_image": "image",
+    "end_image": "image",
+    "tail_image": "image",
+    "first_image": "image",
+    "audio": "audio",
+    "audio_url": "audio",
+    "reference_audio": "audio",
+    "driving_audio": "audio",
+}
+
+
+def _upload_kind_for(name: str, ui_component: str) -> str | None:
+    """Return 'image' | 'audio' | 'video' if this field is a secondary
+    file-upload field, else None. Combines an explicit name map with
+    Atlas's x-ui-component=uploader hint (kind inferred from the name)."""
+    if name in _UPLOAD_FIELD_KINDS:
+        return _UPLOAD_FIELD_KINDS[name]
+    if ui_component in ("uploader", "uploaders"):
+        lname = name.lower()
+        if "audio" in lname or "sound" in lname or "voice" in lname:
+            return "audio"
+        if "video" in lname or "clip" in lname:
+            return "video"
+        return "image"  # default for an uploader of unknown kind
+    return None
 
 
 def _humanize(name: str) -> str:
@@ -97,6 +130,8 @@ def _simplify(input_schema: dict) -> list[dict]:
             continue
         if not isinstance(p, dict):
             continue
+        ui = p.get("x-ui-component") or ""
+        upload_kind = _upload_kind_for(name, ui)
         out.append(
             {
                 "name": name,
@@ -108,8 +143,14 @@ def _simplify(input_schema: dict) -> list[dict]:
                 "minimum": p.get("minimum"),
                 "maximum": p.get("maximum"),
                 "step": p.get("step"),
-                "ui_component": p.get("x-ui-component") or "",
+                "ui_component": ui,
                 "required": name in required,
+                # Secondary file-upload field (end frame, driving audio).
+                # When set, the frontend renders an upload dropzone of this
+                # kind and the backend resolves an "upload://<id>" sentinel
+                # value into an Atlas media URL at submit time.
+                "is_upload": upload_kind is not None,
+                "upload_kind": upload_kind or "",
             }
         )
     return out
