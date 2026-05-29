@@ -39,6 +39,10 @@ type Props = {
   /** Called when the count of too-small uploads changes. Parent uses this
    *  to gate the Run button. */
   onValidationChange?: (hasInvalid: boolean) => void;
+  /** Pre-populate the tile grid with already-uploaded files (recipe load).
+   *  Re-syncs when the set of ids changes. Dimensions are unknown for a
+   *  restored upload (0,0), so the dim check is skipped for it. */
+  initialUploads?: UploadResponse[] | null;
 };
 
 /**
@@ -55,12 +59,26 @@ export function MultiImageDropzone({
   onChange,
   minDim,
   onValidationChange,
+  initialUploads,
 }: Props) {
-  const [uploads, setUploads] = useState<UploadWithDims[]>([]);
+  const [uploads, setUploads] = useState<UploadWithDims[]>(
+    (initialUploads ?? []).map((u) => ({ ...u, width: 0, height: 0 })),
+  );
   const [uploadingCount, setUploadingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Re-sync from a parent-provided restored set (recipe load). Keyed by the
+  // joined id list so it only refires when the actual set changes. Does NOT
+  // bubble via onChange -- the parent set its own imageUploads when loading
+  // the recipe, so calling back would be redundant.
+  const restoredKey = (initialUploads ?? []).map((u) => u.id).join(",");
+  useEffect(() => {
+    if (initialUploads === undefined) return;
+    setUploads((initialUploads ?? []).map((u) => ({ ...u, width: 0, height: 0 })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoredKey]);
 
   // Bubble validation state up to the parent whenever uploads change.
   // hasInvalid is true if minDim is set and any uploaded image has a

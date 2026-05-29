@@ -83,6 +83,22 @@ class AtlasClient:
                 headers=self.headers,
             )
         if r.status_code != 200:
+            # Atlas sometimes returns a non-200 (often 500) whose body is
+            # still a valid prediction payload carrying the REAL terminal
+            # status -- e.g. {"code":500,"status":"failed","error":"Upstream
+            # account is in arrears..."}. If we can parse such a body and it
+            # reports a terminal status, return it so wait_for_completion
+            # surfaces the actual failure IMMEDIATELY instead of retrying
+            # the poll 10x as if it were a transient network blip.
+            try:
+                body = r.json()
+            except ValueError:
+                body = None
+            if isinstance(body, dict):
+                d = body.get("data") if isinstance(body.get("data"), dict) else body
+                s = str(d.get("status") or body.get("status") or "").lower().strip()
+                if s in _TERMINAL_OK or s in _TERMINAL_BAD:
+                    return body
             raise AtlasError(f"Atlas status failed [{r.status_code}]: {r.text[:500]}")
         return r.json()
 

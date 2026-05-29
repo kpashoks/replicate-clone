@@ -346,6 +346,8 @@ export default function TaskPage() {
   const [restoredImage0, setRestoredImage0] = useState<UploadResponse | null>(null);
   const [restoredImage1, setRestoredImage1] = useState<UploadResponse | null>(null);
   const [restoredVideo, setRestoredVideo] = useState<UploadResponse | null>(null);
+  // For multi-upload models (max_ref_images >= 3): the full restored set.
+  const [restoredMulti, setRestoredMulti] = useState<UploadResponse[] | null>(null);
 
   const refreshRecipes = useCallback(() => {
     listRecipes(task)
@@ -597,6 +599,7 @@ export default function TaskPage() {
     setRestoredImage0(null);
     setRestoredImage1(null);
     setRestoredVideo(null);
+    setRestoredMulti(null);
     const ids = recipe.input_ids || [];
     const fetchAt = async (i: number) =>
       ids[i] ? await getUpload(ids[i]) : null;
@@ -612,16 +615,17 @@ export default function TaskPage() {
       const v = await fetchAt(0);
       if (v) { setVideoUpload(v); setRestoredVideo(v); }
     } else if (recipe.task === "i2i" || recipe.task === "i2v") {
-      const a0 = await fetchAt(0);
-      const a1 = await fetchAt(1);
-      if (a0) {
-        setImageUploads((a) => { const n = [...a]; n[0] = a0; return n; });
-        setRestoredImage0(a0);
-      }
-      if (a1) {
-        setImageUploads((a) => { const n = [...a]; n[1] = a1; return n; });
-        setRestoredImage1(a1);
-      }
+      // Fetch ALL referenced images (a model with max_ref_images >= 3 uses
+      // the MultiImageDropzone and may have several). Populate both the
+      // parent imageUploads (used for submit) AND the right restored-state
+      // for whichever dropzone variant renders.
+      const fetched = (
+        await Promise.all(ids.map((id) => getUpload(id)))
+      ).filter((u): u is UploadResponse => u !== null);
+      setImageUploads(fetched.length ? fetched : [null, null]);
+      setRestoredMulti(fetched);
+      if (fetched[0]) setRestoredImage0(fetched[0]);
+      if (fetched[1]) setRestoredImage1(fetched[1]);
     }
   };
 
@@ -756,6 +760,7 @@ export default function TaskPage() {
                 onChange={(ups) => setImageUploads(ups)}
                 minDim={selectedModel?.min_image_dim ?? undefined}
                 onValidationChange={setMultiInvalidDim}
+                initialUploads={restoredMulti}
               />
             )}
 
@@ -1384,6 +1389,7 @@ function SaveRecipeModal({
     try {
       await onSave(name.trim());
       setSaved(true);
+      setBusy(false); // re-enable footer so "Done" is clickable + dialog can close
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
       setBusy(false);
