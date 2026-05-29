@@ -523,12 +523,19 @@ export default function TaskPage() {
   const onSaveRecipe = async (name: string) => {
     if (!selectedModel) return;
     const { params, inputIds } = buildSubmitPayload();
+    // Capture the on-screen output as a thumbnail if the current job
+    // succeeded (so the recipe list shows a visual preview).
+    const thumbnail =
+      currentJob?.status === "succeeded" && currentJob.output_files[0]
+        ? currentJob.output_files[0]
+        : null;
     await createRecipe({
       name,
       slug: selectedModel.slug,
       task,
       params,
       input_ids: inputIds,
+      thumbnail,
     });
     refreshRecipes();
   };
@@ -681,35 +688,31 @@ export default function TaskPage() {
               )}
             </div>
 
-            {/* ----- Saved recipes loader ----- */}
+            {/* ----- Saved recipes ----- */}
             {recipes.length > 0 && (
               <div className="space-y-1.5">
-                <Label htmlFor="recipe-picker">Load a saved recipe</Label>
-                <div className="flex gap-2">
-                  <select
-                    id="recipe-picker"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const r = recipes.find((x) => x.id === e.target.value);
-                      if (r) onLoadRecipe(r);
-                      e.target.value = ""; // reset so the same one can be re-picked
-                    }}
-                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="" disabled>
-                      {recipes.length} saved recipe
-                      {recipes.length === 1 ? "" : "s"} — pick to load…
-                    </option>
-                    {recipes.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
+                <Label>
+                  Saved recipes{" "}
+                  <span className="text-muted-foreground font-normal">
+                    ({recipes.length})
+                  </span>
+                </Label>
+                <div className="max-h-56 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  {recipes.map((r) => (
+                    <RecipeRow
+                      key={r.id}
+                      recipe={r}
+                      onLoad={() => onLoadRecipe(r)}
+                      onDelete={async () => {
+                        await deleteRecipe(r.id);
+                        refreshRecipes();
+                      }}
+                    />
+                  ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Loads the model, settings, and uploaded files from a
-                  previously-saved recipe in one click.
+                  Click a recipe to load its model, settings, and uploaded
+                  files in one click. 🗑 removes it.
                 </p>
               </div>
             )}
@@ -1267,6 +1270,82 @@ export default function TaskPage() {
         onSave={onSaveRecipe}
       />
     </main>
+  );
+}
+
+// =====================================================================
+// Recipe row: thumbnail + name (click to load) + delete
+// =====================================================================
+function RecipeRow({
+  recipe,
+  onLoad,
+  onDelete,
+}: {
+  recipe: Recipe;
+  onLoad: () => void;
+  onDelete: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const thumbUrl = recipe.thumbnail ? fileUrl(recipe.thumbnail) : null;
+  const thumbIsVideo = thumbUrl ? isVideoUrl(thumbUrl) : false;
+
+  return (
+    <div className="flex items-center gap-2 p-1.5 hover:bg-accent/40 transition-colors">
+      {/* Thumbnail (or placeholder) */}
+      <button
+        type="button"
+        onClick={onLoad}
+        className="shrink-0 size-10 overflow-hidden rounded border border-border bg-muted flex items-center justify-center"
+        title="Load this recipe"
+      >
+        {thumbUrl && !thumbIsVideo && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={thumbUrl} alt="" className="size-full object-cover" />
+        )}
+        {thumbUrl && thumbIsVideo && (
+          <video src={thumbUrl} className="size-full object-cover" muted />
+        )}
+        {!thumbUrl && (
+          <span className="text-[9px] text-muted-foreground">no
+            preview</span>
+        )}
+      </button>
+
+      {/* Name (click to load) */}
+      <button
+        type="button"
+        onClick={onLoad}
+        className="flex-1 min-w-0 text-left"
+        title="Load this recipe"
+      >
+        <p className="truncate text-sm">{recipe.name}</p>
+        <p className="truncate text-[10px] text-muted-foreground">
+          {new Date(recipe.created_at * 1000).toLocaleDateString()}
+          {recipe.input_ids.length > 0 &&
+            ` · ${recipe.input_ids.length} file${recipe.input_ids.length === 1 ? "" : "s"}`}
+        </p>
+      </button>
+
+      {/* Delete */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        disabled={deleting}
+        onClick={async () => {
+          setDeleting(true);
+          try {
+            await onDelete();
+          } catch {
+            setDeleting(false);
+          }
+        }}
+        title="Delete this recipe"
+      >
+        <span aria-hidden>🗑</span>
+        <span className="sr-only">Delete recipe</span>
+      </Button>
+    </div>
   );
 }
 

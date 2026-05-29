@@ -245,6 +245,7 @@ export type Recipe = {
   task: string;
   params: Record<string, unknown>;
   input_ids: string[];
+  thumbnail: string | null;
   created_at: number;
 };
 
@@ -254,6 +255,7 @@ export type RecipeCreate = {
   task: string;
   params: Record<string, unknown>;
   input_ids: string[];
+  thumbnail?: string | null;
 };
 
 export async function createRecipe(body: RecipeCreate): Promise<Recipe> {

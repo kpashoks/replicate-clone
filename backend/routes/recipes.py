@@ -34,6 +34,10 @@ class RecipeCreate(BaseModel):
     task: str = Field(..., min_length=1)
     params: dict = Field(default_factory=dict)
     input_ids: list[str] = Field(default_factory=list)
+    # Optional preview: the output-file path of the job that was on screen
+    # when the recipe was saved (e.g. "outputs/<job_id>/0.png"). Rendered
+    # as a thumbnail in the recipe list. None if saved before any run.
+    thumbnail: str | None = None
 
 
 class Recipe(RecipeCreate):
